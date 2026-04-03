@@ -6,3 +6,4 @@ tasks/.locks/
 *.tape
 *.gif
 simulate.sh
+demo.sh

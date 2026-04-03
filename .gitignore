@@ -3,3 +3,6 @@ tasks/*.md
 tasks/done/
 tasks/.locks/
 .status/
+*.tape
+*.gif
+simulate.sh

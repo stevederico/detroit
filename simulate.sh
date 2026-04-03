@@ -14,12 +14,12 @@ sleep 0.2
 log "Reading tasks from $TASK_DIR"
 sleep 0.2
 log "Task: 01-add-dark-mode"
-log "Repo: my-app"
+log "Repo: skateboard"
 
 # ── 2/12 ROUTE
 stage "ROUTE"
 sleep 0.2
-log "Repo: my-app (/Users/me/Desktop/projects/my-app)"
+log "Repo: skateboard (/Users/me/Desktop/projects/skateboard)"
 
 # ── 3/12 PULL
 stage "PULL"
@@ -62,7 +62,7 @@ echo "Pushing to origin/shipyard/01-add-dark-mode..."
 sleep 0.5
 echo "Creating pull request..."
 sleep 0.4
-echo "https://github.com/stevederico/my-app/pull/47"
+echo "https://github.com/stevederico/skateboard/pull/47"
 sleep 0.2
 echo "FACTORY_RESULT:SUCCESS"
 sleep 0.2
@@ -125,5 +125,5 @@ log "Moved tasks/01-add-dark-mode.md → tasks/done/"
 # ── DONE
 stage "DONE"
 sleep 0.2
-log "PR: https://github.com/stevederico/my-app/pull/47"
+log "PR: https://github.com/stevederico/skateboard/pull/47"
 echo ""

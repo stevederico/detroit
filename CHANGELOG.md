@@ -1,5 +1,8 @@
 # Changelog
 
+0.26.0
+  Adopt factory.md spec
+  Consolidate standards and workflow
 0.25.0
   Swappable agent provider
   Support dotbot and Claude

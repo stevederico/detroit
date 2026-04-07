@@ -31,6 +31,22 @@ update_status() { echo "$1" > "$STATUS_DIR/agent-$AGENT_ID"; }
 # Prefixed tee: writes raw to log, prefixed to terminal
 ptee() { while IFS= read -r line; do echo "$line" >> "$LOGFILE"; echo "${PREFIX}${line}"; done; }
 
+# factory_section <section-name> <factory.md path>
+# Extracts the body of an H2 section from a factory.md file (case-insensitive).
+# See docs/factory-md-spec.md for the spec.
+factory_section() {
+  local section="$1"
+  local file="$2"
+  awk -v target="## $section" '
+    BEGIN { found=0; t=tolower(target) }
+    /^## / {
+      if (found) exit
+      if (tolower($0) == t) { found=1; next }
+    }
+    found { print }
+  ' "$file"
+}
+
 # ── Agent configuration ───────────────────────────────────
 # SHIPYARD_AGENT: claude (default), dotbot
 # SHIPYARD_PROVIDER: xai (default) — provider for dotbot (xai, anthropic, openai, ollama)
@@ -709,8 +725,7 @@ if [ "$DRY_RUN" = true ]; then
   log "Branch:     $BRANCH"
   log "Base:       $BASE_BRANCH"
   log "Verify:     $(command -v agent-browser &>/dev/null && echo 'agent-browser available' || echo 'agent-browser not installed — skip')"
-  log "Standards:  $SHIPYARD/standards.md"
-  log "Workflow:   $SHIPYARD/workflow.md"
+  log "Factory:    $SHIPYARD/factory.md"
   log ""
   log "━━━ PROMPT ━━━"
   echo "$TASK_PROMPT" | ptee
@@ -742,10 +757,10 @@ Log format rules (follow exactly):
 - Results: plain text summary of what changed
 
 Coding standards (enforce these regardless of project CLAUDE.md):
-$(cat "$SHIPYARD/standards.md")
+$(factory_section "standards" "$SHIPYARD/factory.md")
 
 Workflow (BRANCH=$BRANCH, BASE_BRANCH=$BASE_BRANCH):
-$(cat "$SHIPYARD/workflow.md")
+$(factory_section "workflow" "$SHIPYARD/factory.md")
 PROMPT_EOF
 
 # Stream agent output in real time

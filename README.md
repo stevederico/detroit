@@ -152,7 +152,7 @@ Based on patterns from Ramp Inspect and Stripe Minions:
 | ROUTE | deterministic | Find repo locally, clone from GitHub, or create new |
 | PULL | deterministic | Detect default branch, git pull |
 | BRANCH | deterministic | Create feature branch, generate CI workflow if missing |
-| CODE | agentic | Claude implements (standards.md + workflow.md) |
+| CODE | agentic | Claude implements (standards + workflow from `factory.md`) |
 | TEST | agentic | Claude runs tests (inside same session) |
 | LINT | deterministic | Shell checks: no secrets, test failures |
 | FIX | agentic | Claude fixes lint failures (max 2 attempts) |
@@ -164,12 +164,17 @@ Based on patterns from Ramp Inspect and Stripe Minions:
 
 ## Configuration
 
-Two files control what the factory tells the agent to do:
+A single file controls what the factory tells the agent to do: **`factory.md`** at the repo root. It is a portable spec made of named H2 sections — see `docs/factory-md-spec.md` for the format.
 
-- **`standards.md`** — coding standards (error handling, accessibility, naming, etc.)
-- **`workflow.md`** — post-coding steps (commit, push, open PR, etc.)
+- `## standards` — coding standards (error handling, accessibility, naming, etc.)
+- `## workflow` — post-coding steps (commit, push, open PR, etc.)
+- `## validation` — gates a task must pass before being marked done
+- `## routing` — how tasks map to repos
+- `## runtime` — language/tooling hints
 
-Edit either file to match your preferences. The factory auto-detects your default branch (`main` or `master`) and new repos are created as private.
+Edit any section to match your preferences. The factory auto-detects your default branch (`main` or `master`) and new repos are created as private.
+
+`factory.md` is designed to be framework-agnostic so the same file can drive any autonomous agent pipeline, not just Shipyard.
 
 ## Requirements
 
@@ -184,7 +189,7 @@ Shipyard does the same thing as GitHub Copilot Coding Agent and Claude for GitHu
 ### What Shipyard has that they don't
 
 - **Task queue with priority** — file-based, numbered for order, not one-off prompts
-- **Configurable standards and workflow** — edit `standards.md` and `workflow.md` to control exactly what the agent does
+- **Configurable standards and workflow** — edit `factory.md` (a portable, framework-agnostic spec) to control exactly what the agent does
 - **Screenshot verification** — starts the dev server, reads the diff, screenshots the actual pages that changed
 - **Runs locally** — no data leaves your machine except API calls
 - **Swappable agent** — Claude Code or dotbot (any provider: xAI, Anthropic, OpenAI, Ollama)
@@ -208,7 +213,7 @@ git clone https://github.com/stevederico/shipyard
 cd shipyard
 ```
 
-Edit `factory.sh`, `standards.md`, or `workflow.md`. Open a PR.
+Edit `factory.sh` or `factory.md`. Open a PR.
 
 ## License
 

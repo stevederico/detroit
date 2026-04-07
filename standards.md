@@ -1,9 +1,0 @@
-- Error handling: visible to user, human-readable messages, recovery actions, loading indicators >200ms
-- Accessibility: labels or aria-label on all interactive elements, semantic HTML, WCAG 2.1 AA contrast, 44px touch targets
-- API safety: exponential backoff on 429/5xx (1s>2s>4s>8s, max 3-5 retries), never loop without throttling
-- Functions: max ~50 lines, single responsibility, early returns, no magic numbers
-- Naming: camelCase functions, PascalCase components, UPPER_SNAKE_CASE constants, is/has/should booleans
-- Imports: external > internal > relative
-- Doc comments on exported/public functions (JSDoc for JS, # for Shell)
-- Write tests for new code (Vitest, colocated .test.js files)
-- Umami analytics: add data-umami-event on interactive elements if analytics is wired up

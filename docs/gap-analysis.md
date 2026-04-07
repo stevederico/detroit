@@ -16,9 +16,9 @@ Two structural gaps remain: environment isolation and observability.
 | Task queue | Slack, web, Chrome ext, GitHub PR comments | Slack, web UI, internal system triggers | `tasks/` markdown files + `--issues` GitHub sync |
 | Branch isolation | Per-sandbox branches on Modal | Devbox branches on EC2 | Worktree-isolated `shipyard/` branches |
 | Autonomous coding | OpenCode in Modal sandbox | Goose fork (models undisclosed) | Claude Code `-p` |
-| PR creation | GitHub App + user tokens | GitHub | `gh pr create` (via workflow.md) |
+| PR creation | GitHub App + user tokens | GitHub | `gh pr create` (via `## workflow` in `factory.md`) |
 | Deterministic + agentic stages | Deterministic infra + agentic OpenCode | Blueprints: deterministic nodes + agentic nodes | Multi-stage pipeline (PICK, ROUTE, PULL, BRANCH, CODE, LINT, FIX, SHIP, VERIFY, UPDATE) |
-| Coding standards | MCP plugins + skill files | Scoped rule files per directory (same format as Cursor/Claude Code) | `standards.md` + project `CLAUDE.md` |
+| Coding standards | MCP plugins + skill files | Scoped rule files per directory (same format as Cursor/Claude Code) | `## standards` in `factory.md` + project `CLAUDE.md` |
 | Self-verification | Chromium via VNC, before/after screenshots, Sentry, Datadog, LaunchDarkly | Local lint daemon (<1s), selective CI from 3M+ test battery, known autofixes | VERIFY stage: dev server + agent-browser DOM snapshots + screenshots + verify/fix loop |
 | CI iteration loop | Tests in sandbox, agent retries | Max 2 CI rounds, autofixes applied first, then agent attempt | FIX stage: lint failures passed to Claude, re-run lint, max 2 attempts |
 | Parallel sessions | Hundreds concurrent on Modal, filesystem snapshots every 30 min | Parallel devboxes on EC2, ~6 per engineer | `--parallel N` with atomic mkdir locks + worktrees |

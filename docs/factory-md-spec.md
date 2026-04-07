@@ -59,6 +59,31 @@ A stage is an H3 heading with the form:
 - **`<type>`** is `agentic`, `deterministic`, or `mixed`.
 - **`<body>`** is markdown until the next H3 or H2. For `agentic` stages, write imperative numbered steps. For `deterministic` stages, write a bullet list of gates.
 
+## Gate dispatch (deterministic stages)
+
+The body of a deterministic stage is a bullet list of natural-language gates. Each framework matches gates against its own library of recognized check implementations using keyword patterns.
+
+There are three possible outcomes per gate:
+
+- **PASS** — the framework recognized the gate, ran the corresponding check, and the check passed.
+- **FAIL** — the framework recognized the gate, ran the check, and the check failed. This blocks the pipeline (or triggers the next `mixed` stage, e.g. `fix`).
+- **CUSTOM** — the framework did not recognize the gate. It cannot be auto-verified, so it is forwarded to the next agentic stage as an additional constraint. The agent is told the gate exists and asked to honor it, but the framework does not gate on it.
+
+This means the same `factory.md` works across frameworks with different check libraries: a framework that knows how to verify "no secrets in diff" but not "bundle size under 100KB" will enforce the first and forward the second to the agent.
+
+The spec deliberately does not standardize the keyword patterns — each framework picks its own. Authors should write gates in plain English; if a framework doesn't recognize a gate, the agent still sees it.
+
+Example:
+
+```markdown
+### lint (deterministic)
+- No secrets in committed files
+- CHANGELOG.md updated
+- Bundle size under 100KB
+```
+
+A framework that recognizes "secrets" and "changelog" patterns will run those two checks itself and forward "Bundle size under 100KB" to the agent during the `fix` stage. A different framework that also recognizes "bundle size" will verify all three.
+
 ## Common stage names
 
 These names have conventional semantics. Frameworks should recognize them. Custom stages with other names are allowed.
@@ -202,5 +227,5 @@ This document describes `factory.md` **v1**. Future versions are backward-compat
 
 ## Implementations
 
-- **Shipyard** — reference implementation. `factory.sh` reads `factory.md` from the repo root, injects `## standards` and the `code` stage into every Claude session, and orchestrates the deterministic stages directly.
+- **Shipyard** — reference implementation. `factory.sh` reads `factory.md` from the repo root, injects `## standards` and the `code` stage into every Claude session, dispatches `lint` gates against a built-in check library, and forwards unrecognized gates to the agent during `fix`.
 - *(your framework here — PRs welcome)*

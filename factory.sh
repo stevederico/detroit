@@ -71,6 +71,48 @@ factory_stage() {
   ' "$file"
 }
 
+# lint_check_gate <gate-text>
+# Dispatches a natural-language lint gate to a framework-recognized check.
+# Uses bash glob keyword matching against gate text.
+# Returns: 0 = pass, 1 = fail (recognized + violated), 2 = custom (unrecognized).
+# Reads outer-scope: BASE_BRANCH, BRANCH, REPO_DIR, PRE_VERSION, LOGFILE.
+lint_check_gate() {
+  local gate="$1"
+  local gate_lower
+  gate_lower=$(echo "$gate" | tr '[:upper:]' '[:lower:]')
+
+  case "$gate_lower" in
+    *secret*|*.env*|*.pem*|*.key*|*credential*|*token*)
+      git diff "$BASE_BRANCH...$BRANCH" --name-only 2>/dev/null \
+        | grep -qE '\.env|\.pem|\.key|credentials|secrets|tokens' && return 1
+      return 0
+      ;;
+    *changelog*)
+      git diff "$BASE_BRANCH...$BRANCH" --name-only 2>/dev/null \
+        | grep -qi "changelog" || return 1
+      return 0
+      ;;
+    *version*bump*|*bump*version*)
+      [ -f "$REPO_DIR/package.json" ] || return 0
+      [ -n "$PRE_VERSION" ] || return 0
+      local post_version
+      post_version=$(python3 -c "import json; print(json.load(open('package.json')).get('version',''))" 2>/dev/null)
+      [ "$post_version" = "$PRE_VERSION" ] && return 1
+      return 0
+      ;;
+    *test*pass*|*pass*test*)
+      if grep -qE "(FAIL|ERROR|test.*failed|Tests:.*failed)" "$LOGFILE" 2>/dev/null \
+        && ! grep -q "FACTORY_RESULT:SUCCESS" "$LOGFILE"; then
+        return 1
+      fi
+      return 0
+      ;;
+    *)
+      return 2
+      ;;
+  esac
+}
+
 # ── Agent configuration ───────────────────────────────────
 # SHIPYARD_AGENT: claude (default), dotbot
 # SHIPYARD_PROVIDER: xai (default) — provider for dotbot (xai, anthropic, openai, ollama)
@@ -795,45 +837,32 @@ CODE_END=$(date +%s)
 CODE_ELAPSED=$(( CODE_END - CODE_START ))
 log "Agent session completed in ${CODE_ELAPSED}s"
 
-# ── LINT (deterministic checks) ───────────────────────────
+# ── LINT (gates read from factory.md) ─────────────────────
 stage "LINT"
 update_status "$TASK_NAME — linting"
 LINT_PASS=true
 LINT_FAILURES=""
+LINT_CUSTOM_GATES=""
+LINT_GATES=$(factory_stage "lint" "$SHIPYARD/factory.md")
 
-# Check: no .env or secrets committed on branch
-if git diff "$BASE_BRANCH...$BRANCH" --name-only 2>/dev/null | grep -qE '\.env|\.pem|\.key|credentials|secrets|tokens'; then
-  log "FAIL: secrets or .env in committed files"
-  LINT_FAILURES="${LINT_FAILURES}\n- Secrets or .env files committed to branch"
-  LINT_PASS=false
-fi
+while IFS= read -r line; do
+  # Strip leading "- " bullet markers and surrounding whitespace
+  gate=$(echo "$line" | sed -E 's/^[[:space:]]*-[[:space:]]*//' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
+  [ -z "$gate" ] && continue
 
-# Check: changelog was modified
-if ! git diff "$BASE_BRANCH...$BRANCH" --name-only 2>/dev/null | grep -qi "changelog"; then
-  log "WARN: CHANGELOG.md not updated"
-  LINT_FAILURES="${LINT_FAILURES}\n- CHANGELOG.md not updated"
-fi
-
-# Check: package.json version bumped
-if [ -f "$REPO_DIR/package.json" ] && [ -n "$PRE_VERSION" ]; then
-  POST_VERSION=$(python3 -c "import json; print(json.load(open('package.json')).get('version',''))" 2>/dev/null)
-  if [ "$PRE_VERSION" = "$POST_VERSION" ]; then
-    log "WARN: package.json version not bumped ($PRE_VERSION)"
-    LINT_FAILURES="${LINT_FAILURES}\n- package.json version not bumped (still $PRE_VERSION)"
-  else
-    log "OK: version $PRE_VERSION → $POST_VERSION"
-  fi
-fi
-
-# Check: tests passed (look for failure indicators in log)
-if grep -qE "(FAIL|ERROR|test.*failed|Tests:.*failed)" "$LOGFILE" 2>/dev/null && ! grep -q "FACTORY_RESULT:SUCCESS" "$LOGFILE"; then
-  log "FAIL: tests did not pass"
-  LINT_FAILURES="${LINT_FAILURES}\n- Tests failed"
-  LINT_PASS=false
-fi
+  lint_check_gate "$gate"
+  case "$?" in
+    0) log "PASS: $gate" ;;
+    1) log "FAIL: $gate"
+       LINT_FAILURES="${LINT_FAILURES}\n- $gate"
+       LINT_PASS=false ;;
+    2) log "CUSTOM: $gate (deferred to agent)"
+       LINT_CUSTOM_GATES="${LINT_CUSTOM_GATES}\n- $gate" ;;
+  esac
+done <<< "$LINT_GATES"
 
 if [ "$LINT_PASS" = true ] && [ -z "$LINT_FAILURES" ]; then
-  log "All lint checks passed"
+  log "All lint gates passed"
 else
   log "Lint issues found"
 fi
@@ -856,39 +885,31 @@ You are fixing lint failures in a shipyard run. Fix these issues and commit.
 PROJECT: $REPO_NAME
 BRANCH: $BRANCH
 
-LINT FAILURES:
+LINT FAILURES (verified by the framework):
 $(echo -e "$LINT_FAILURES")
+$([ -n "$LINT_CUSTOM_GATES" ] && printf '\nADDITIONAL CONSTRAINTS (from factory.md, not auto-verified — honor them):%s\n' "$(echo -e "$LINT_CUSTOM_GATES")")
 
 Log format: plain text, no markdown, no ** or ## or []. Use ━━━ STAGE ━━━ for headers.
 
 Steps:
-1. Fix each issue listed above
-2. If secrets are committed, remove them and add to .gitignore
-3. If CHANGELOG.md missing, create or update it
-4. If version not bumped, bump it in package.json
-5. If tests failed, fix the failing tests
-6. Stage only files you changed, commit with a descriptive message
-7. Push: git push origin $BRANCH
-8. Print FIX_DONE when finished
+1. Fix each verified failure above
+2. Honor the additional constraints if applicable
+3. Stage only files you changed, commit with a descriptive message
+4. Push: git push origin $BRANCH
+5. Print FIX_DONE when finished
 LINT_FIX_EOF
 
     run_agent "$FIX_PROMPT_FILE" --model sonnet --timeout 120 | ptee
     rm -f "$FIX_PROMPT_FILE"
 
-    # Re-run lint checks
+    # Re-run lint gates (same dispatcher, same factory.md source)
     LINT_FAILURES=""
-    if git diff "$BASE_BRANCH...$BRANCH" --name-only 2>/dev/null | grep -qE '\.env|\.pem|\.key|credentials|secrets|tokens'; then
-      LINT_FAILURES="${LINT_FAILURES}\n- Secrets or .env files still committed"
-    fi
-    if ! git diff "$BASE_BRANCH...$BRANCH" --name-only 2>/dev/null | grep -qi "changelog"; then
-      LINT_FAILURES="${LINT_FAILURES}\n- CHANGELOG.md still not updated"
-    fi
-    if [ -f "$REPO_DIR/package.json" ] && [ -n "$PRE_VERSION" ]; then
-      POST_VERSION=$(python3 -c "import json; print(json.load(open('package.json')).get('version',''))" 2>/dev/null)
-      if [ "$PRE_VERSION" = "$POST_VERSION" ]; then
-        LINT_FAILURES="${LINT_FAILURES}\n- package.json version still not bumped"
-      fi
-    fi
+    while IFS= read -r line; do
+      gate=$(echo "$line" | sed -E 's/^[[:space:]]*-[[:space:]]*//' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
+      [ -z "$gate" ] && continue
+      lint_check_gate "$gate"
+      [ "$?" = "1" ] && LINT_FAILURES="${LINT_FAILURES}\n- $gate"
+    done <<< "$LINT_GATES"
 
     if [ -z "$LINT_FAILURES" ]; then
       log "All lint issues fixed"

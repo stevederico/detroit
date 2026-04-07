@@ -59,6 +59,7 @@ Resolve the task to a repo:
 - No secrets, .env, .pem, .key, credentials, or tokens in committed files
 - `CHANGELOG.md` updated
 - `package.json` version bumped (when applicable)
+- Tests passed
 
 ### fix (mixed)
 If `lint` fails, pass the failure list to the agent. Agent fixes and re-runs lint. Max 2 attempts.

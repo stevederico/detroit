@@ -1,5 +1,8 @@
 # Changelog
 
+0.28.0
+  Read lint gates from factory.md
+  Custom gates fall through to agent
 0.27.0
   Declarative stages spec
   Replace workflow with stages

@@ -7,6 +7,7 @@ CI gate with fix loop
 support other providers via dotbot
 adopt factory.md spec
 declarative stages spec
+lint gates read from factory.md
 - publish factory-md spec as standalone repo
 - scheduleing daemon mode: --watch that polls tasks/ or uses fswatch, auto-processes new files or dotbot 
 - context injection: load target repo CLAUDE.md and representative files into prompt

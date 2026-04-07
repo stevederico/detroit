@@ -1,163 +1,65 @@
 # factory.md
 
-**A portable spec for autonomous coding agent pipelines.**
+**A Dockerfile for code factories.**
 
-`factory.md` is a single markdown file at the root of a repository that tells any autonomous agent framework how to ship code in that repo: the standards to follow, the stages of the pipeline, and how to run them.
+`factory.md` is a single markdown file at the root of a repository. It holds the standards an autonomous coding agent must follow to ship code in that repo — coding style, build environment, testing, documentation, dev environment, code quality, observability, and security — all in one place.
 
-It is to autonomous agents what `Dockerfile` is to containers — a declarative, portable, framework-agnostic instruction set.
+Clone a factory, run it anywhere.
 
 ## Why not AGENTS.md?
 
-`AGENTS.md` describes **how to write code** in a repo (style, conventions, gotchas). `factory.md` describes **the full ship-it loop** as a sequence of named stages (code, lint, ship, verify, etc.).
-
-They are complementary. A repo can have both. `AGENTS.md` answers *"what should this code look like?"* `factory.md` answers *"what stages run, in what order, and what does each one do?"*
+`AGENTS.md` is freeform prose about how to write code in a repo. `factory.md` is a fixed set of named sections any framework can parse. They are complementary: a repo may have both.
 
 ## Location
 
-Place `factory.md` at the root of the repository. Frameworks should look for it before falling back to framework-specific config (`.cursorrules`, `CLAUDE.md`, etc.).
+Place `factory.md` at the root of the repository. Frameworks should look for it before falling back to framework-specific config.
 
 ## Format
 
-Standard CommonMark markdown. H2 headings (`##`) are reserved section names. Within `## stages`, H3 headings (`###`) define individual stages. Frameworks read what they understand and ignore the rest. **All sections are optional.**
+Standard CommonMark markdown. H2 headings (`##`) are reserved section names. Every section is a bullet list of rules. Frameworks read what they understand and ignore the rest. **All sections are optional.**
 
-## Reserved sections
+## The 8 sections
 
-### `## standards`
-Coding rules the agent must follow. Bullet list or prose. Cross-cutting — applied to every agentic stage.
-
-### `## stages`
-The ordered pipeline. Each H3 inside this section is a stage. Stage headings carry a type tag in parens:
-
-- **agentic** — the stage body is injected into the agent's prompt as instructions
-- **deterministic** — the body is a list of gates the framework verifies in code
-- **mixed** — deterministic detection with agentic remediation (e.g. lint fails → agent fixes)
-
-Stages run in document order. Frameworks may skip stages they don't implement.
-
-### `## routing`
-How tasks map to repos, branches, or services. Used by multi-repo factories.
-
-### `## runtime`
-Language, package manager, and tooling hints. e.g. `node 20`, `deno 1.40+`, `python 3.12`, `swift 5.10`.
-
-### `## secrets`
-Names of environment variables required (never values). Frameworks resolve these from their own secret store.
-
-### `## tasks`
-Optional location of the task queue. Defaults to `tasks/` if omitted.
-
-## Stage anatomy
-
-A stage is an H3 heading with the form:
-
-```markdown
-### <name> (<type>) — <CONTAINER>
-<body>
-```
-
-- **`<name>`** is a lowercase identifier (`code`, `lint`, `ship`, `verify`, etc.). Frameworks recognize common names by convention.
-- **`<type>`** is `agentic`, `deterministic`, or `mixed`.
-- **`<CONTAINER>`** is optional. An uppercase taxonomy label preceded by an em-dash. Used for grouping in dashboards and reports.
-- **`<body>`** is markdown until the next H3 or H2. For `agentic` stages, write imperative numbered steps. For `deterministic` stages, write a bullet list of gates.
-
-## Gate dispatch (deterministic stages)
-
-The body of a deterministic stage is a bullet list of natural-language gates. Each framework matches gates against its own library of recognized check implementations using keyword patterns.
-
-There are three possible outcomes per gate:
-
-- **PASS** — the framework recognized the gate, ran the corresponding check, and the check passed.
-- **FAIL** — the framework recognized the gate, ran the check, and the check failed. This blocks the pipeline (or triggers the next `mixed` stage, e.g. `fix`).
-- **CUSTOM** — the framework did not recognize the gate. It cannot be auto-verified, so it is forwarded to the next agentic stage as an additional constraint. The agent is told the gate exists and asked to honor it, but the framework does not gate on it.
-
-This means the same `factory.md` works across frameworks with different check libraries: a framework that knows how to verify "no secrets in diff" but not "bundle size under 100KB" will enforce the first and forward the second to the agent.
-
-The spec deliberately does not standardize the keyword patterns — each framework picks its own. Authors should write gates in plain English; if a framework doesn't recognize a gate, the agent still sees it.
-
-Example:
-
-```markdown
-### lint (deterministic)
-- No secrets in committed files
-- CHANGELOG.md updated
-- Bundle size under 100KB
-```
-
-A framework that recognizes "secrets" and "changelog" patterns will run those two checks itself and forward "Bundle size under 100KB" to the agent during the `fix` stage. A different framework that also recognizes "bundle size" will verify all three.
-
-## Common stage names
-
-These names have conventional semantics. Frameworks should recognize them. Custom stages with other names are allowed.
-
-| Name | Type | Container | Purpose |
-|---|---|---|---|
-| `pick` | deterministic | TRIAGE | Choose the next task from the queue |
-| `route` | deterministic | TRIAGE | Resolve task to a repo |
-| `prepare` | deterministic | ENVIRONMENT | Pull default branch, create feature branch |
-| `scaffold` | deterministic | BUILD | Generate CI workflow if missing |
-| `code` | agentic | TEST | Implement, test, version, commit, push, PR |
-| `document` | agentic | DOCUMENTATION | Update README, doc comments, AGENTS.md for changed code |
-| `instrument` | agentic | OBSERVABILITY | Add logging / error reporting for new code paths |
-| `audit` | deterministic | QUALITY | File/function size, TODO/FIXME, complexity gates |
-| `lint` | deterministic | STYLE | Pre-PR gates (no secrets, changelog updated, etc.) |
-| `fix` | mixed | STYLE | Re-engage agent if lint fails |
-| `secure` | deterministic | SECURITY | Hardcoded credentials, eval, dangerous patterns |
-| `ship` | deterministic | SHIP | Confirm PR opened |
-| `ci` | mixed | SHIP | Watch CI; re-engage agent on failure |
-| `verify` | agentic | TEST | Visual / runtime verification |
-| `update` | deterministic | SHIP | Cleanup, move task to done, close issues |
-| `done` | deterministic | SHIP | Report final status |
-
-## Containers
-
-Stages are grouped into 10 quality containers. Containers are taxonomy — they describe *what kind of work* a stage does — not execution order. Multiple stages can share a container, and a single container can have stages at non-contiguous positions in the pipeline.
-
-| # | Container | Stages |
+| # | Section | What it covers |
 |---|---|---|
-| 0 | TRIAGE | `pick`, `route` |
-| 1 | STYLE | `lint`, `fix` |
-| 2 | BUILD | `scaffold` |
-| 3 | TEST | `code`, `verify` |
-| 4 | DOCUMENTATION | `document` |
-| 5 | ENVIRONMENT | `prepare` |
-| 6 | QUALITY | `audit` |
-| 7 | OBSERVABILITY | `instrument` |
-| 8 | SECURITY | `secure` |
-| 9 | SHIP | `ship`, `ci`, `update`, `done` |
+| 1 | `## style` | Formatting, naming, function size, imports, changelog hygiene |
+| 2 | `## build` | Runtime, package manager, CI workflow, version bumping |
+| 3 | `## testing` | Test framework, colocations, pass/fail gates |
+| 4 | `## documentation` | Doc comments, README, AGENTS.md updates |
+| 5 | `## environment` | Dev tools, branching rules, worktrees |
+| 6 | `## quality` | File size, function size, TODO/FIXME, complexity |
+| 7 | `## observability` | Logging, error reporting, tracing |
+| 8 | `## security` | Hardcoded credentials, dangerous patterns, dependency checks |
 
-Container labels are optional. A framework that doesn't care about containers reads only the stages list. A framework that wants to render a quality dashboard groups stages by container.
+Each section is a bullet list. Every bullet is one rule. Plain English.
 
-## Parsing rules
+## Rule dispatch
 
-1. Section headings are matched case-insensitively against reserved names.
-2. Stage headings are matched case-insensitively. The type tag in parens is stripped before matching.
-3. Unknown sections and unknown stages are preserved and ignored.
-4. Order of sections does not matter. Order of stages within `## stages` is significant.
-5. Anything before the first H2 is preamble.
-6. YAML frontmatter is allowed for metadata: `name`, `version`, `framework_min_version`.
+Frameworks read each bullet and decide what to do with it:
+
+- **Recognized as a gate** — the framework runs a check. If it passes, the pipeline continues. If it fails, the pipeline blocks (or a remediation stage kicks in).
+- **Recognized as a runtime hint** — the framework uses it to configure the environment (e.g. `node 20` → install Node 20).
+- **Unrecognized** — the framework forwards the bullet to the agent as an additional rule to honor.
+
+The spec does not prescribe which bullets must be gates vs hints vs forwarded. Authors write rules in plain English; frameworks do the best they can and forward the rest.
 
 ## Minimal example
 
-````markdown
-# my-app factory
-
-## standards
-- Functional React, no class components
-- Tailwind v4 with semantic tokens
-
-## stages
-
-### code (agentic)
-1. Implement the task
-2. Run `deno test`
-3. Bump minor version in package.json
-4. Commit, push, open PR against master
-
-### lint (deterministic)
-- All tests pass
+```markdown
+## style
+- camelCase functions, PascalCase components
+- Functions max 50 lines
 - No secrets in diff
-- CHANGELOG updated
-````
+- CHANGELOG updated per PR
+
+## testing
+- Vitest, colocated .test.js
+- All tests pass before PR
+
+## security
+- No hardcoded credentials
+- No eval
+```
 
 ## Full example
 
@@ -165,92 +67,66 @@ Container labels are optional. A framework that doesn't care about containers re
 ---
 name: shipyard
 version: 1
-framework_min_version: 0.1
 ---
 
 # shipyard factory
 
-Autonomous code factory pipeline for the shipyard project.
-
-## runtime
-- bash
-- node 20
-- gh cli
-
-## standards
-- Functions max ~50 lines, single responsibility, early returns
-- camelCase functions, PascalCase components, UPPER_SNAKE_CASE constants
-- Doc comments on exported/public functions
-- Visible error handling, never swallow errors
-- Tests required for new code (Vitest, colocated `.test.js`)
-
-## stages
-
-### pick (deterministic)
-Take the first `.md` file from `tasks/` in alphabetical order. Atomic file lock.
-
-### route (deterministic)
-Resolve the task to a repo: `repo:` frontmatter → that path; otherwise scaffold a new repo.
-
-### prepare (deterministic)
-- Detect default branch
-- `git pull`
-- Create feature branch
-- Generate `.github/workflows/ci.yml` if missing
-
-### code (agentic)
-1. Implement the task
-2. Run tests; fix failures (max 3 attempts)
-3. Bump minor version in `package.json`
-4. Add CHANGELOG entry
-5. Stage modified files only (no `git add .`)
-6. Commit (no AI attribution)
-7. Push branch, open PR against `master`
-8. Print `FACTORY_RESULT:SUCCESS` or `FAILED`
-
-### lint (deterministic)
+## style
+- camelCase functions, PascalCase components, UPPER_SNAKE constants
+- Functions max 50 lines, single responsibility, early returns
+- Imports: external then internal then relative
 - No secrets, .env, .pem, .key in diff
-- CHANGELOG.md updated
-- package.json version bumped
+- CHANGELOG.md updated per PR
 
-### fix (mixed)
-On lint failure, pass failures to the agent. Max 2 attempts.
+## build
+- node 20
+- CI workflow at .github/workflows/ci.yml (auto-generate if missing)
+- package.json version bumped per PR
 
-### ship (deterministic)
-Confirm a PR was opened. Capture URL.
+## testing
+- Vitest, colocated .test.js
+- All tests must pass before PR opens
+- New code requires new tests
 
-### ci (mixed)
-Watch GitHub Actions. On failure, pass logs to agent. Max 2 attempts.
+## documentation
+- JSDoc on exported functions
+- README updated for user-facing changes
+- AGENTS.md updated for agent-facing changes
 
-### verify (agentic)
-1. Read the diff
-2. Identify affected pages
-3. Start dev server
-4. Screenshot via `agent-browser`
+## environment
+- bash, gh CLI authenticated
+- Worktrees for parallel-safe branches
+- Feature branches, never commit to default
 
-### update (deterministic)
-Move task to `tasks/done/`. Close GitHub issue.
+## quality
+- No files over 500 lines
+- No new TODO/FIXME in diff
+- No function over 50 lines
 
-### done (deterministic)
-Return to default branch. Report status.
+## observability
+- Log errors with context at system boundaries
+- Error reporting on new code paths
+- Never swallow errors silently
 
-## routing
-- Tasks with `repo:` frontmatter route to that repo
-- Tasks without frontmatter scaffold a new repo
-
-## secrets
-- GITHUB_TOKEN
-- ANTHROPIC_API_KEY
-
-## tasks
-./tasks/
+## security
+- No hardcoded credentials, API keys, or tokens
+- No eval, no child_process with string interpolation
+- No dangerous shell patterns
 ````
+
+## Parsing rules
+
+1. Section headings are matched case-insensitively against the 8 reserved names.
+2. Bullets can use `-`, `*`, or `+` markers.
+3. Unknown sections are preserved and ignored.
+4. YAML frontmatter is allowed for metadata: `name`, `version`, `framework_min_version`.
+5. Anything before the first H2 is preamble.
 
 ## Spec versioning
 
-This document describes `factory.md` **v1**. Future versions are backward-compatible at the section and stage level: existing reserved names will not change meaning. New reserved sections and conventional stage names may be added.
+This document describes `factory.md` **v1**. Future versions are backward-compatible at the section level: existing reserved names will not change meaning. New reserved sections may be added in later versions.
 
 ## Implementations
 
-- **Shipyard** — reference implementation. `factory.sh` reads `factory.md` from the repo root, injects `## standards` and the `code` stage into every Claude session, dispatches `lint` gates against a built-in check library, and forwards unrecognized gates to the agent during `fix`.
+- **Shipyard** — reference implementation. `factory.sh` reads `factory.md` from the repo root, injects every section into the agent prompt as rules, and dispatches bullets from `## testing`, `## quality`, and `## security` as gates against a built-in check library. Unrecognized bullets are forwarded to the agent as additional constraints.
 - *(your framework here — PRs welcome)*

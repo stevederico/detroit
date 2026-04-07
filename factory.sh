@@ -47,39 +47,25 @@ factory_section() {
   ' "$file"
 }
 
-# factory_stage <stage-name> <factory.md path>
-# Extracts the body of an H3 stage from the ## stages section of factory.md.
-# Strips the type tag and container suffix from the heading. Examples:
-#   "### code (agentic)"            → matches "code"
-#   "### code (agentic) — TEST"     → matches "code"
-# Stops at the next H3 (next stage) or H2 (next section).
-factory_stage() {
-  local stage="$1"
-  local file="$2"
-  awk -v target="$stage" '
-    BEGIN { found=0; in_stages=0; t=tolower(target) }
-    /^## / {
-      if (tolower($0) == "## stages") { in_stages=1; next }
-      if (in_stages) { in_stages=0; if (found) exit }
-    }
-    in_stages && /^### / {
-      if (found) exit
-      hdr = $0
-      sub(/^### */, "", hdr)
-      sub(/[[:space:]]+\(.*$/, "", hdr)
-      sub(/[[:space:]]+—.*$/, "", hdr)
-      if (tolower(hdr) == t) { found=1; next }
-    }
-    found { print }
-  ' "$file"
+# factory_rules <factory.md path>
+# Concatenates every known factory.md section with a heading prefix so the
+# agent prompt contains every rule the factory declares. See docs/factory-md-spec.md.
+factory_rules() {
+  local file="$1"
+  local section body
+  for section in style build testing documentation environment quality observability security; do
+    body=$(factory_section "$section" "$file")
+    [ -z "$body" ] && continue
+    printf '\n%s\n%s\n' "[$section]" "$body"
+  done
 }
 
-# lint_check_gate <gate-text>
-# Dispatches a natural-language lint gate to a framework-recognized check.
+# check_gate <gate-text>
+# Dispatches a natural-language rule bullet to a framework-recognized check.
 # Uses bash glob keyword matching against gate text.
 # Returns: 0 = pass, 1 = fail (recognized + violated), 2 = custom (unrecognized).
 # Reads outer-scope: BASE_BRANCH, BRANCH, REPO_DIR, PRE_VERSION, LOGFILE.
-lint_check_gate() {
+check_gate() {
   local gate="$1"
   local gate_lower
   gate_lower=$(echo "$gate" | tr '[:upper:]' '[:lower:]')
@@ -108,6 +94,36 @@ lint_check_gate() {
         && ! grep -q "FACTORY_RESULT:SUCCESS" "$LOGFILE"; then
         return 1
       fi
+      return 0
+      ;;
+    *file*over*500*line*|*file*500*line*|*no*file*500*)
+      local f flines
+      while IFS= read -r f; do
+        [ -z "$f" ] && continue
+        [ -f "$REPO_DIR/$f" ] || continue
+        flines=$(wc -l < "$REPO_DIR/$f" 2>/dev/null | tr -d ' ')
+        [ -n "$flines" ] && [ "$flines" -gt 500 ] && return 1
+      done < <(git diff "$BASE_BRANCH...$BRANCH" --name-only 2>/dev/null)
+      return 0
+      ;;
+    *todo*|*fixme*)
+      git diff "$BASE_BRANCH...$BRANCH" 2>/dev/null \
+        | grep -qE '^\+.*\b(TODO|FIXME)\b' && return 1
+      return 0
+      ;;
+    *hardcoded*credential*|*api*key*|*access*token*|*private*key*)
+      git diff "$BASE_BRANCH...$BRANCH" 2>/dev/null \
+        | grep -qE "^\+.*(api[_-]?key|secret[_-]?key|password|private[_-]?key|access[_-]?token)[[:space:]]*[:=][[:space:]]*['\"][^'\"]{8,}['\"]" && return 1
+      return 0
+      ;;
+    *eval*)
+      git diff "$BASE_BRANCH...$BRANCH" 2>/dev/null \
+        | grep -qE '^\+.*\beval[[:space:]]*\(' && return 1
+      return 0
+      ;;
+    *child_process*|*exec*interpolat*|*shell*injection*)
+      git diff "$BASE_BRANCH...$BRANCH" 2>/dev/null \
+        | grep -qE "^\+.*(child_process\.)?exec(Sync)?[[:space:]]*\(.*\\\$\{" && return 1
       return 0
       ;;
     *)
@@ -817,6 +833,8 @@ You are running in shipyard mode. Complete this task autonomously.
 
 REPO: $REPO_NAME
 NEW_REPO: $IS_NEW_REPO
+BRANCH: $BRANCH
+BASE_BRANCH: $BASE_BRANCH
 
 --- TASK ---
 $TASK_PROMPT
@@ -827,11 +845,27 @@ Log format rules (follow exactly):
 - Progress: plain text, no markdown, no ** or ## or []
 - Results: plain text summary of what changed
 
-Coding standards (enforce these regardless of project CLAUDE.md):
-$(factory_section "standards" "$SHIPYARD/factory.md")
+Factory rules (every bullet is mandatory — grouped by the 8 factory.md sections):
+$(factory_rules "$SHIPYARD/factory.md")
 
-Code stage instructions (BRANCH=$BRANCH, BASE_BRANCH=$BASE_BRANCH):
-$(factory_stage "code" "$SHIPYARD/factory.md")
+Pipeline (execute in order):
+1. If NEW_REPO is true, scaffold the repo from scratch (README, package.json, etc.)
+2. Implement the task
+3. Run tests if they exist; if they fail, fix and re-run (max 3 attempts)
+4. For each new or modified exported function, ensure a doc comment matches the implementation
+5. If README describes features affected by your change, update it
+6. If AGENTS.md or CLAUDE.md describes behavior affected by your change, update it
+7. For each new error path, log the error with context
+8. For each new external API call, log timing and result
+9. Read package.json version and CHANGELOG.md before changing either
+10. Bump minor version in package.json (e.g. 1.7.0 → 1.8.0); bump again if that version already exists in CHANGELOG
+11. Add the new version to the top of CHANGELOG.md with a 3-word description (2-space indent, no dash)
+12. Stage modified files plus .github/workflows/ if it exists (never git add . or git add -A)
+13. Commit with a descriptive message (no AI attribution, no Co-Authored-By)
+14. If NEW_REPO is true, create a GitHub repo: gh repo create PROJECT --private --source=. --push
+15. Push the branch: git push origin $BRANCH
+16. If NEW_REPO is false, open a PR: gh pr create --base $BASE_BRANCH
+17. Print FACTORY_RESULT:SUCCESS or FACTORY_RESULT:FAILED
 PROMPT_EOF
 
 # Stream agent output in real time
@@ -842,130 +876,62 @@ CODE_END=$(date +%s)
 CODE_ELAPSED=$(( CODE_END - CODE_START ))
 log "Agent session completed in ${CODE_ELAPSED}s"
 
-# Only run downstream stages if code stage actually shipped a PR
+# Only run downstream gates if code stage actually shipped a PR
 HAS_SHIPPED=false
 grep -q "FACTORY_RESULT:SUCCESS" "$LOGFILE" 2>/dev/null && HAS_SHIPPED=true
 
-# ── DOCUMENT (DOCUMENTATION — agent session) ──────────────
-if [ "$HAS_SHIPPED" = true ]; then
-  stage "DOCUMENT"
-  update_status "$TASK_NAME — documenting"
-  DOC_PROMPT_FILE=$(mktemp)
-  cat > "$DOC_PROMPT_FILE" <<DOC_EOF
-You are running the document stage of the shipyard factory.
-
-PROJECT: $REPO_NAME
-BRANCH: $BRANCH
-BASE: $BASE_BRANCH
-
-$(factory_stage "document" "$SHIPYARD/factory.md")
-
-Log format: plain text, no markdown, no ** or ## or [].
-DOC_EOF
-  run_agent "$DOC_PROMPT_FILE" --model sonnet --timeout 180 | ptee
-  rm -f "$DOC_PROMPT_FILE"
-fi
-
-# ── INSTRUMENT (OBSERVABILITY — agent session) ────────────
-if [ "$HAS_SHIPPED" = true ]; then
-  stage "INSTRUMENT"
-  update_status "$TASK_NAME — instrumenting"
-  INST_PROMPT_FILE=$(mktemp)
-  cat > "$INST_PROMPT_FILE" <<INST_EOF
-You are running the instrument stage of the shipyard factory.
-
-PROJECT: $REPO_NAME
-BRANCH: $BRANCH
-BASE: $BASE_BRANCH
-
-$(factory_stage "instrument" "$SHIPYARD/factory.md")
-
-Log format: plain text, no markdown, no ** or ## or [].
-INST_EOF
-  run_agent "$INST_PROMPT_FILE" --model sonnet --timeout 180 | ptee
-  rm -f "$INST_PROMPT_FILE"
-fi
-
-# ── AUDIT (QUALITY — file/function size checks) ───────────
-if [ "$HAS_SHIPPED" = true ]; then
-  stage "AUDIT"
-  update_status "$TASK_NAME — auditing"
-  AUDIT_WARN_COUNT=0
-  CHANGED_FILES=$(git diff "$BASE_BRANCH...$BRANCH" --name-only 2>/dev/null)
-  if [ -n "$CHANGED_FILES" ]; then
-    while IFS= read -r f; do
-      [ -z "$f" ] && continue
-      [ -f "$REPO_DIR/$f" ] || continue
-      flines=$(wc -l < "$REPO_DIR/$f" 2>/dev/null | tr -d ' ')
-      if [ -n "$flines" ] && [ "$flines" -gt 500 ]; then
-        log "WARN: $f exceeds 500 lines ($flines)"
-        AUDIT_WARN_COUNT=$((AUDIT_WARN_COUNT + 1))
-      fi
-      # New TODO/FIXME in committed code
-      if git diff "$BASE_BRANCH...$BRANCH" -- "$f" 2>/dev/null | grep -qE '^\+.*\b(TODO|FIXME)\b'; then
-        log "WARN: $f introduces TODO/FIXME"
-        AUDIT_WARN_COUNT=$((AUDIT_WARN_COUNT + 1))
-      fi
-    done <<< "$CHANGED_FILES"
-  fi
-  if [ "$AUDIT_WARN_COUNT" -eq 0 ]; then
-    log "Audit clean — no quality warnings"
-  else
-    log "Audit completed with $AUDIT_WARN_COUNT warning(s)"
-  fi
-fi
-
-# ── LINT (gates read from factory.md) ─────────────────────
-stage "LINT"
-update_status "$TASK_NAME — linting"
-LINT_PASS=true
-LINT_FAILURES=""
-LINT_CUSTOM_GATES=""
-LINT_GATES=$(factory_stage "lint" "$SHIPYARD/factory.md")
+# ── GATES (dispatch every rule bullet to check_gate) ─────
+# Reads every bullet from the 8 factory.md sections and runs each through
+# check_gate. Recognized rules are verified; unrecognized rules are forwarded
+# to the agent during FIX as additional constraints.
+stage "GATES"
+update_status "$TASK_NAME — checking gates"
+GATE_FAILURES=""
+GATE_CUSTOM=""
 
 while IFS= read -r line; do
-  # Strip leading "- " bullet markers and surrounding whitespace
   gate=$(echo "$line" | sed -E 's/^[[:space:]]*-[[:space:]]*//' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
   [ -z "$gate" ] && continue
+  case "$gate" in
+    \[*\]) continue ;;  # skip section header labels from factory_rules
+  esac
 
-  lint_check_gate "$gate"
+  check_gate "$gate"
   case "$?" in
     0) log "PASS: $gate" ;;
     1) log "FAIL: $gate"
-       LINT_FAILURES="${LINT_FAILURES}\n- $gate"
-       LINT_PASS=false ;;
-    2) log "CUSTOM: $gate (deferred to agent)"
-       LINT_CUSTOM_GATES="${LINT_CUSTOM_GATES}\n- $gate" ;;
+       GATE_FAILURES="${GATE_FAILURES}\n- $gate" ;;
+    2) GATE_CUSTOM="${GATE_CUSTOM}\n- $gate" ;;
   esac
-done <<< "$LINT_GATES"
+done < <(factory_rules "$SHIPYARD/factory.md")
 
-if [ "$LINT_PASS" = true ] && [ -z "$LINT_FAILURES" ]; then
-  log "All lint gates passed"
+if [ -z "$GATE_FAILURES" ]; then
+  log "All recognized gates passed"
 else
-  log "Lint issues found"
+  log "Gate failures detected"
 fi
 
-# ── FIX (agent fixes lint failures — max 2 attempts) ─────
-if [ -n "$LINT_FAILURES" ]; then
+# ── FIX (agent fixes gate failures — max 2 attempts) ─────
+if [ -n "$GATE_FAILURES" ] && [ "$HAS_SHIPPED" = true ]; then
   stage "FIX"
-  update_status "$TASK_NAME — fixing lint"
+  update_status "$TASK_NAME — fixing gates"
   FIX_ATTEMPT=0
   MAX_FIX_ATTEMPTS=2
 
-  while [ -n "$LINT_FAILURES" ] && [ "$FIX_ATTEMPT" -lt "$MAX_FIX_ATTEMPTS" ]; do
+  while [ -n "$GATE_FAILURES" ] && [ "$FIX_ATTEMPT" -lt "$MAX_FIX_ATTEMPTS" ]; do
     FIX_ATTEMPT=$((FIX_ATTEMPT + 1))
     log "Fix attempt $FIX_ATTEMPT/$MAX_FIX_ATTEMPTS"
 
     FIX_PROMPT_FILE=$(mktemp)
-    cat > "$FIX_PROMPT_FILE" <<LINT_FIX_EOF
-You are fixing lint failures in a shipyard run. Fix these issues and commit.
+    cat > "$FIX_PROMPT_FILE" <<FIX_EOF
+You are fixing factory gate failures in a shipyard run. Fix these issues and commit.
 
 PROJECT: $REPO_NAME
 BRANCH: $BRANCH
 
-LINT FAILURES (verified by the framework):
-$(echo -e "$LINT_FAILURES")
-$([ -n "$LINT_CUSTOM_GATES" ] && printf '\nADDITIONAL CONSTRAINTS (from factory.md, not auto-verified — honor them):%s\n' "$(echo -e "$LINT_CUSTOM_GATES")")
+GATE FAILURES (verified by the framework):
+$(echo -e "$GATE_FAILURES")
+$([ -n "$GATE_CUSTOM" ] && printf '\nADDITIONAL CONSTRAINTS (from factory.md, not auto-verified — honor them):%s\n' "$(echo -e "$GATE_CUSTOM")")
 
 Log format: plain text, no markdown, no ** or ## or []. Use ━━━ STAGE ━━━ for headers.
 
@@ -975,60 +941,31 @@ Steps:
 3. Stage only files you changed, commit with a descriptive message
 4. Push: git push origin $BRANCH
 5. Print FIX_DONE when finished
-LINT_FIX_EOF
+FIX_EOF
 
     run_agent "$FIX_PROMPT_FILE" --model sonnet --timeout 120 | ptee
     rm -f "$FIX_PROMPT_FILE"
 
-    # Re-run lint gates (same dispatcher, same factory.md source)
-    LINT_FAILURES=""
+    # Re-run gates
+    GATE_FAILURES=""
     while IFS= read -r line; do
       gate=$(echo "$line" | sed -E 's/^[[:space:]]*-[[:space:]]*//' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
       [ -z "$gate" ] && continue
-      lint_check_gate "$gate"
-      [ "$?" = "1" ] && LINT_FAILURES="${LINT_FAILURES}\n- $gate"
-    done <<< "$LINT_GATES"
+      case "$gate" in \[*\]) continue ;; esac
+      check_gate "$gate"
+      [ "$?" = "1" ] && GATE_FAILURES="${GATE_FAILURES}\n- $gate"
+    done < <(factory_rules "$SHIPYARD/factory.md")
 
-    if [ -z "$LINT_FAILURES" ]; then
-      log "All lint issues fixed"
+    if [ -z "$GATE_FAILURES" ]; then
+      log "All gate failures fixed"
       break
     else
-      log "Issues remaining after attempt $FIX_ATTEMPT"
+      log "Gates still failing after attempt $FIX_ATTEMPT"
     fi
   done
 
-  if [ -n "$LINT_FAILURES" ]; then
-    log "Could not fix all lint issues after $MAX_FIX_ATTEMPTS attempts"
-  fi
-fi
-
-# ── SECURE (SECURITY — pattern scan on diff) ──────────────
-if [ "$HAS_SHIPPED" = true ]; then
-  stage "SECURE"
-  update_status "$TASK_NAME — securing"
-  SECURE_WARN_COUNT=0
-  DIFF_TEXT=$(git diff "$BASE_BRANCH...$BRANCH" 2>/dev/null)
-  if [ -n "$DIFF_TEXT" ]; then
-    # Hardcoded credentials in added lines
-    if echo "$DIFF_TEXT" | grep -qE "^\+.*(api[_-]?key|secret[_-]?key|password|private[_-]?key|access[_-]?token)[[:space:]]*[:=][[:space:]]*['\"][^'\"]{8,}['\"]"; then
-      log "WARN: hardcoded credential pattern detected in diff"
-      SECURE_WARN_COUNT=$((SECURE_WARN_COUNT + 1))
-    fi
-    # eval() introduced
-    if echo "$DIFF_TEXT" | grep -qE "^\+.*\beval[[:space:]]*\("; then
-      log "WARN: eval() introduced in diff"
-      SECURE_WARN_COUNT=$((SECURE_WARN_COUNT + 1))
-    fi
-    # child_process.exec / execSync with interpolation
-    if echo "$DIFF_TEXT" | grep -qE "^\+.*(child_process\.)?exec(Sync)?[[:space:]]*\(.*\\\$\{"; then
-      log "WARN: shell exec with interpolation detected in diff"
-      SECURE_WARN_COUNT=$((SECURE_WARN_COUNT + 1))
-    fi
-  fi
-  if [ "$SECURE_WARN_COUNT" -eq 0 ]; then
-    log "Security checks passed"
-  else
-    log "Security audit found $SECURE_WARN_COUNT warning(s)"
+  if [ -n "$GATE_FAILURES" ]; then
+    log "Could not fix all gate failures after $MAX_FIX_ATTEMPTS attempts"
   fi
 fi
 

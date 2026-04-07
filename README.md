@@ -144,41 +144,44 @@ Based on patterns from Ramp Inspect and Stripe Minions:
 12. **Logging** — timestamped logs per run for debugging
 13. **Scheduling** — cron or trigger to run without you
 
-## Stages
-
-Defined declaratively in the `## stages` section of `factory.md`. Each stage is `agentic` (the agent does it), `deterministic` (the framework verifies gates), or `mixed` (deterministic detection with agentic remediation). Each stage belongs to one of 10 quality containers (TRIAGE, STYLE, BUILD, TEST, DOCUMENTATION, ENVIRONMENT, QUALITY, OBSERVABILITY, SECURITY, SHIP).
-
-| # | Stage | Type | Container | What |
-|---|-------|------|-----------|------|
-| 1 | `pick` | deterministic | TRIAGE | Take first `.md` file from `tasks/` |
-| 2 | `route` | deterministic | TRIAGE | Find repo locally, clone from GitHub, or create new |
-| 3 | `prepare` | deterministic | ENVIRONMENT | Detect default branch, git pull, create feature branch (worktree) |
-| 4 | `scaffold` | deterministic | BUILD | Generate `.github/workflows/ci.yml` if missing |
-| 5 | `code` | agentic | TEST | Claude implements, tests, versions, commits, pushes, opens PR |
-| 6 | `document` | agentic | DOCUMENTATION | Claude updates README, doc comments, AGENTS.md for changed code |
-| 7 | `instrument` | agentic | OBSERVABILITY | Claude adds logging / error reporting for new code paths |
-| 8 | `audit` | deterministic | QUALITY | File size, function size, TODO/FIXME warnings |
-| 9 | `lint` | deterministic | STYLE | Shell gates: no secrets, changelog updated, version bumped, tests pass |
-| 10 | `fix` | mixed | STYLE | Claude fixes lint failures (max 2 attempts) |
-| 11 | `secure` | deterministic | SECURITY | Hardcoded credentials, eval, dangerous patterns |
-| 12 | `ship` | deterministic | SHIP | Confirm PR opened, capture URL |
-| 13 | `ci` | mixed | SHIP | Watch GitHub Actions, fix failures (max 2 attempts) |
-| 14 | `verify` | agentic | TEST | Agent reads diff, screenshots affected pages via agent-browser |
-| 15 | `update` | deterministic | SHIP | Move task file to `tasks/done/`, close GitHub issue |
-| 16 | `done` | deterministic | SHIP | Report result, return to default branch |
-
 ## Configuration
 
-A single file controls the factory: **`factory.md`** at the repo root. It is a portable spec made of named H2 sections — see `docs/factory-md-spec.md` for the format.
+A single file controls the factory: **`factory.md`** at the repo root. A Dockerfile for code factories — all the standards an autonomous agent needs to ship code in a repo, in one file you can clone and run anywhere. See `docs/factory-md-spec.md` for the full spec.
 
-- `## standards` — coding standards (error handling, accessibility, naming, etc.)
-- `## stages` — the declarative pipeline (each stage is an H3 with a type tag)
-- `## routing` — how tasks map to repos
-- `## runtime` — language/tooling hints
+`factory.md` has 8 reserved sections. Each section is a bullet list of rules.
 
-Edit any section to match your preferences. The factory auto-detects your default branch (`main` or `master`) and new repos are created as private.
+| # | Section | Covers |
+|---|---------|--------|
+| 1 | `## style` | Formatting, naming, function size, imports, changelog hygiene |
+| 2 | `## build` | Runtime, package manager, CI workflow, version bumping |
+| 3 | `## testing` | Test framework, pass/fail gates, new-code test requirements |
+| 4 | `## documentation` | Doc comments, README, AGENTS.md updates |
+| 5 | `## environment` | Dev tools, branching rules, worktrees |
+| 6 | `## quality` | File size, function size, TODO/FIXME, complexity |
+| 7 | `## observability` | Logging, error reporting, tracing |
+| 8 | `## security` | Hardcoded credentials, dangerous patterns, dependencies |
 
-`factory.md` is designed to be framework-agnostic so the same file can drive any autonomous agent pipeline, not just Shipyard.
+Every bullet is one rule. The framework reads each bullet and either:
+
+- **Runs it as a gate** if it recognizes the rule (e.g. "no secrets in diff", "tests pass")
+- **Forwards it to the agent** as an additional rule to honor if it doesn't recognize it
+
+Edit any section to match your preferences. `factory.md` is framework-agnostic — the same file can drive any autonomous agent pipeline, not just Shipyard.
+
+## Pipeline
+
+Shipyard's pipeline is an implementation detail of `factory.sh`:
+
+1. Pick the next task from `tasks/`
+2. Route it to a repo (local, GitHub, or new)
+3. Prepare a feature branch (worktree)
+4. Scaffold a CI workflow if missing
+5. Run the agent with every `factory.md` rule injected into the prompt
+6. Dispatch every rule bullet through `check_gate`; recognized gates run as checks, unrecognized gates are forwarded
+7. Fix gate failures by re-engaging the agent (max 2 attempts)
+8. Confirm the PR, watch CI, fix failures (max 2 attempts)
+9. Screenshot affected pages via agent-browser
+10. Move the task file to `tasks/done/`, close the issue, return to the default branch
 
 ## Requirements
 

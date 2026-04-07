@@ -1,5 +1,8 @@
 # Changelog
 
+0.30.0
+  Simplify factory.md to 8 sections
+  Collapse pipeline stages into gates dispatcher
 0.29.0
   Add document instrument audit secure scaffold stages
   Pipeline grows to 16 stages across 10 containers

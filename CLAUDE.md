@@ -4,8 +4,8 @@ Autonomous code factory that reads task files from `tasks/` and ships them as PR
 
 ## Structure
 
-- `factory.sh` — factory pipeline runner. Reads stages from `factory.md` and executes them.
-- `factory.md` — portable spec declaring standards, stages, routing, and runtime. The `## stages` section defines the full pipeline declaratively. See `docs/factory-md-spec.md`.
+- `factory.sh` — pipeline runner. Reads rules from `factory.md` and enforces them.
+- `factory.md` — portable spec of the standards the agent must follow. 8 H2 sections: `## style`, `## build`, `## testing`, `## documentation`, `## environment`, `## quality`, `## observability`, `## security`. Each bullet is one rule. See `docs/factory-md-spec.md`.
 - `tasks/` — task queue. One markdown file per task. Completed tasks move to `tasks/done/`.
 - `logs/` — timestamped logs per run (gitignored)
 
@@ -19,32 +19,23 @@ Each file in `tasks/` is a task. The filename is the task name, the body is the 
 
 ## Factory Flow
 
-The pipeline runs as a sequence of stages declared in `factory.md` under `## stages`. Each stage belongs to one of 10 containers (TRIAGE, STYLE, BUILD, TEST, DOCUMENTATION, ENVIRONMENT, QUALITY, OBSERVABILITY, SECURITY, SHIP).
+`factory.sh` runs a fixed bash pipeline. `factory.md` supplies the rules the agent enforces during the CODE stage and the gates the framework runs afterwards.
 
-1. **pick** (TRIAGE) — first `.md` file from `tasks/` (alphabetical, atomic lock)
-2. **route** (TRIAGE) — resolve task to a repo (local, GitHub, or new)
-3. **prepare** (ENVIRONMENT) — pull default branch, create feature branch via worktree
-4. **scaffold** (BUILD) — generate `.github/workflows/ci.yml` if missing
-5. **code** (TEST) — Claude implements, tests, versions, commits, pushes, opens PR
-6. **document** (DOCUMENTATION) — Claude updates README, doc comments, AGENTS.md
-7. **instrument** (OBSERVABILITY) — Claude adds logging / error reporting for new paths
-8. **audit** (QUALITY) — file/function size warnings, TODO/FIXME detection
-9. **lint** (STYLE) — gates from factory.md (secrets, changelog, version, tests)
-10. **fix** (STYLE) — re-engage Claude on lint failure (max 2 attempts)
-11. **secure** (SECURITY) — hardcoded credentials, eval, dangerous patterns
-12. **ship** (SHIP) — confirm PR opened
-13. **ci** (SHIP) — watch GitHub Actions, re-engage Claude on failure (max 2 attempts)
-14. **verify** (TEST) — Claude reads diff, screenshots affected pages via agent-browser
-15. **update** (SHIP) — move task file to `tasks/done/`, close GitHub issue
-16. **done** (SHIP) — return to default branch, log to `logs/{timestamp}.log`
+1. **PICK** — first `.md` file from `tasks/` (alphabetical, atomic lock)
+2. **ROUTE** — resolve task to a repo (local, GitHub, or new)
+3. **PREPARE** — pull default branch, create feature branch via worktree
+4. **SCAFFOLD** — generate `.github/workflows/ci.yml` if missing
+5. **CODE** — agent session. Every `factory.md` rule is injected into the prompt. Agent implements, tests, documents, instruments, versions, commits, pushes, opens PR.
+6. **GATES** — every rule bullet from `factory.md` is dispatched through `check_gate`. Recognized rules run as shell checks; unrecognized rules are held as "custom" constraints.
+7. **FIX** — if GATES fails, re-engage the agent with the failures and custom constraints (max 2 attempts).
+8. **SHIP** — confirm PR opened.
+9. **CI** — watch GitHub Actions, re-engage agent on failure (max 2 attempts).
+10. **VERIFY** — agent reads diff, screenshots affected pages via agent-browser.
+11. **UPDATE** — move task file to `tasks/done/`, close GitHub issue.
+12. **DONE** — return to default branch, log to `logs/{timestamp}.log`.
 
 ## Configuration
 
-Edit `factory.md` to customize the factory. Configuration lives in named H2 sections:
-
-- `## standards` — coding rules cross-cutting all agentic stages
-- `## stages` — the pipeline itself. Each H3 is one stage with a type tag (`agentic`, `deterministic`, `mixed`)
-- `## routing` — how tasks map to repos
-- `## runtime` — language/tooling hints
+Edit `factory.md` to customize the factory. Every rule the factory enforces lives in one of the 8 reserved sections. Add a bullet, it becomes a rule. If the framework recognizes the bullet it runs as a gate; otherwise it is forwarded to the agent.
 
 `factory.md` is a portable spec — see `docs/factory-md-spec.md` for the full format.

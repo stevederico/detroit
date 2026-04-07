@@ -26,21 +26,26 @@ Stages run in order. Each stage is one of three types:
 - **deterministic** — body is a list of gates the framework verifies
 - **mixed** — deterministic detection with agentic remediation
 
-### pick (deterministic)
+Stages are grouped into 10 containers (TRIAGE, STYLE, BUILD, TEST, DOCUMENTATION, ENVIRONMENT, QUALITY, OBSERVABILITY, SECURITY, SHIP). Containers are taxonomy; stages run in pipeline order, not container order.
+
+### pick (deterministic) — TRIAGE
 Take the first `.md` file from `tasks/` in alphabetical order. Atomic file lock to prevent double-processing in parallel runs.
 
-### route (deterministic)
+### route (deterministic) — TRIAGE
 Resolve the task to a repo:
 - `repo:` frontmatter → use that local path or GitHub URL
-- No frontmatter → scaffold a new repo (name slugified from filename)
+- No frontmatter → create a new repo (name slugified from filename)
 
-### prepare (deterministic)
+### prepare (deterministic) — ENVIRONMENT
 - Detect default branch (`main` or `master`)
 - `git pull` to sync
-- Create a feature branch
-- Generate `.github/workflows/ci.yml` if the repo has none
+- Create a feature branch via `git worktree add` (parallel-safe isolation)
 
-### code (agentic)
+### scaffold (deterministic) — BUILD
+- Generate `.github/workflows/ci.yml` if the repo has none
+- Detect runtime (deno vs node) and add `build` / `test` steps if scripts exist
+
+### code (agentic) — TEST
 1. If NEW_REPO is true, scaffold the repo from scratch (README, package.json, etc.)
 2. Implement the task
 3. Run tests if they exist; if they fail, fix and re-run (max 3 attempts)
@@ -55,33 +60,61 @@ Resolve the task to a repo:
 12. If NEW_REPO is false, open a PR: `gh pr create --base BASE_BRANCH`
 13. Print `FACTORY_RESULT:SUCCESS` or `FACTORY_RESULT:FAILED`
 
-### lint (deterministic)
+### document (agentic) — DOCUMENTATION
+1. Read the diff against the base branch
+2. For each new or modified exported function/class/component, ensure it has a doc comment matching the implementation
+3. If `README.md` describes features, update it to reflect new functionality
+4. If `AGENTS.md` or `CLAUDE.md` exists and your changes affect agent workflows, update it
+5. Stage only files you modified, commit with message `docs: update documentation`
+6. Push to the existing PR branch
+7. Print `DOCUMENT_DONE` when finished, or `DOCUMENT_NOOP` if nothing needed updating
+
+### instrument (agentic) — OBSERVABILITY
+1. Read the diff against the base branch
+2. For each new error path, ensure there is a log or error report following the project's existing conventions
+3. For each new external API call, ensure timing and result are logged
+4. Honor `prefers-reduced-motion` and any analytics conventions already in the project
+5. Stage only files you modified, commit with message `observability: add logging`
+6. Push to the existing PR branch
+7. Print `INSTRUMENT_DONE` when finished, or `INSTRUMENT_NOOP` if nothing needed updating
+
+### audit (deterministic) — QUALITY
+- No file in the diff exceeds 500 lines
+- No function exceeds 50 lines (best-effort heuristic)
+- No `TODO` or `FIXME` introduced in committed code
+
+### lint (deterministic) — STYLE
 - No secrets, .env, .pem, .key, credentials, or tokens in committed files
 - `CHANGELOG.md` updated
 - `package.json` version bumped (when applicable)
 - Tests passed
 
-### fix (mixed)
+### fix (mixed) — STYLE
 If `lint` fails, pass the failure list to the agent. Agent fixes and re-runs lint. Max 2 attempts.
 
-### ship (deterministic)
+### secure (deterministic) — SECURITY
+- No hardcoded credentials in diff (matches `api_key`, `secret_key`, `password`, `private_key`, `access_token` assignments)
+- No `eval()` or equivalent introduced
+- No `child_process.exec` with user input
+
+### ship (deterministic) — SHIP
 Confirm a PR was opened. Capture and report the PR URL.
 
-### ci (mixed)
+### ci (mixed) — SHIP
 Watch GitHub Actions on the PR. If failing, pass logs to the agent. Max 2 fix attempts.
 
-### verify (agentic)
+### verify (agentic) — TEST
 1. Read the diff
 2. Identify affected pages
 3. Start dev server + backend
 4. Screenshot affected pages via `agent-browser`
 5. Attach screenshots to the PR
 
-### update (deterministic)
+### update (deterministic) — SHIP
 - Move task file from `tasks/` to `tasks/done/`
 - Close the GitHub issue if `--issues` was used
 
-### done (deterministic)
+### done (deterministic) — SHIP
 - Return to default branch
 - Report final status to the log
 

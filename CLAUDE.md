@@ -19,19 +19,24 @@ Each file in `tasks/` is a task. The filename is the task name, the body is the 
 
 ## Factory Flow
 
-The pipeline runs as a sequence of stages declared in `factory.md` under `## stages`:
+The pipeline runs as a sequence of stages declared in `factory.md` under `## stages`. Each stage belongs to one of 10 containers (TRIAGE, STYLE, BUILD, TEST, DOCUMENTATION, ENVIRONMENT, QUALITY, OBSERVABILITY, SECURITY, SHIP).
 
-1. **pick** — first `.md` file from `tasks/` (alphabetical, atomic lock)
-2. **route** — resolve task to a repo (local, GitHub, or new)
-3. **prepare** — pull default branch, create feature branch, generate CI workflow if missing
-4. **code** — Claude implements, tests, versions, commits, pushes, opens PR (one agent session, output streams in real time)
-5. **lint** — gates: no secrets, changelog updated, version bumped
-6. **fix** — re-engage Claude on lint failure (max 2 attempts)
-7. **ship** — confirm PR opened
-8. **ci** — watch GitHub Actions, re-engage Claude on failure (max 2 attempts)
-9. **verify** — Claude reads diff, screenshots affected pages via agent-browser
-10. **update** — move task file to `tasks/done/`, close GitHub issue
-11. **done** — return to default branch, log to `logs/{timestamp}.log`
+1. **pick** (TRIAGE) — first `.md` file from `tasks/` (alphabetical, atomic lock)
+2. **route** (TRIAGE) — resolve task to a repo (local, GitHub, or new)
+3. **prepare** (ENVIRONMENT) — pull default branch, create feature branch via worktree
+4. **scaffold** (BUILD) — generate `.github/workflows/ci.yml` if missing
+5. **code** (TEST) — Claude implements, tests, versions, commits, pushes, opens PR
+6. **document** (DOCUMENTATION) — Claude updates README, doc comments, AGENTS.md
+7. **instrument** (OBSERVABILITY) — Claude adds logging / error reporting for new paths
+8. **audit** (QUALITY) — file/function size warnings, TODO/FIXME detection
+9. **lint** (STYLE) — gates from factory.md (secrets, changelog, version, tests)
+10. **fix** (STYLE) — re-engage Claude on lint failure (max 2 attempts)
+11. **secure** (SECURITY) — hardcoded credentials, eval, dangerous patterns
+12. **ship** (SHIP) — confirm PR opened
+13. **ci** (SHIP) — watch GitHub Actions, re-engage Claude on failure (max 2 attempts)
+14. **verify** (TEST) — Claude reads diff, screenshots affected pages via agent-browser
+15. **update** (SHIP) — move task file to `tasks/done/`, close GitHub issue
+16. **done** (SHIP) — return to default branch, log to `logs/{timestamp}.log`
 
 ## Configuration
 

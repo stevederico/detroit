@@ -49,7 +49,9 @@ factory_section() {
 
 # factory_stage <stage-name> <factory.md path>
 # Extracts the body of an H3 stage from the ## stages section of factory.md.
-# Strips the type tag in parens, e.g. "### code (agentic)" matches "code".
+# Strips the type tag and container suffix from the heading. Examples:
+#   "### code (agentic)"            → matches "code"
+#   "### code (agentic) — TEST"     → matches "code"
 # Stops at the next H3 (next stage) or H2 (next section).
 factory_stage() {
   local stage="$1"
@@ -64,7 +66,8 @@ factory_stage() {
       if (found) exit
       hdr = $0
       sub(/^### */, "", hdr)
-      sub(/ *\(.*\)$/, "", hdr)
+      sub(/[[:space:]]+\(.*$/, "", hdr)
+      sub(/[[:space:]]+—.*$/, "", hdr)
       if (tolower(hdr) == t) { found=1; next }
     }
     found { print }
@@ -579,7 +582,7 @@ if not issues:
   exit 0
 fi
 
-# ── 1/12 PICK ──────────────────────────────────────────────
+# ── PICK (TRIAGE) ─────────────────────────────────────────
 stage "PICK"
 update_status "picking task..."
 log "Reading tasks from $TASK_DIR"
@@ -626,7 +629,7 @@ if [ "$1" = "--dry-run" ]; then
   DRY_RUN=true
 fi
 
-# ── 2/12 ROUTE ─────────────────────────────────────────────
+# ── ROUTE (TRIAGE) ────────────────────────────────────────
 stage "ROUTE"
 update_status "$TASK_NAME — routing"
 
@@ -675,9 +678,9 @@ fi
 REPO_NAME=$(basename "$REPO_DIR")
 log "Repo: $REPO_NAME ($REPO_DIR)"
 
-# ── 3/12 PULL ──────────────────────────────────────────────
-stage "PULL"
-update_status "$TASK_NAME — pulling"
+# ── PREPARE (ENVIRONMENT) ─────────────────────────────────
+stage "PREPARE"
+update_status "$TASK_NAME — preparing"
 cd "$REPO_DIR" 2>/dev/null
 if [ "$IS_NEW_REPO" = false ]; then
   HAS_REMOTE=$(git remote 2>/dev/null | head -1)
@@ -701,8 +704,6 @@ else
   log "New repo — skipping pull"
 fi
 
-# ── BRANCH ────────────────────────────────────────────────
-stage "BRANCH"
 BRANCH="shipyard/$TASK_NAME"
 if [ "$IS_NEW_REPO" = false ] && [ "$DRY_RUN" = false ]; then
   git branch -D "$BRANCH" 2>/dev/null
@@ -716,7 +717,9 @@ if [ "$IS_NEW_REPO" = false ] && [ "$DRY_RUN" = false ]; then
 fi
 log "Branch: $BRANCH"
 
-# ── CI: generate GitHub Actions workflow if missing ───────
+# ── SCAFFOLD (BUILD) ──────────────────────────────────────
+stage "SCAFFOLD"
+update_status "$TASK_NAME — scaffolding"
 if [ "$IS_NEW_REPO" = false ] && [ ! -d "$REPO_DIR/.github/workflows" ] && [ -f "$REPO_DIR/package.json" ]; then
   log "No CI workflow found — generating .github/workflows/ci.yml"
   mkdir -p "$REPO_DIR/.github/workflows"
@@ -773,6 +776,8 @@ CIEOF
     fi
   fi
   log "Generated CI workflow ($CI_RUNTIME)"
+else
+  log "CI workflow already present or not applicable"
 fi
 
 # Save pre-code state for lint checks
@@ -799,7 +804,7 @@ if [ "$DRY_RUN" = true ]; then
   exit 0
 fi
 
-# ── CODE + TEST (agent session) ───────────────────────────
+# ── CODE (TEST — agent session) ───────────────────────────
 stage "CODE"
 update_status "$TASK_NAME — coding..."
 log "Ctrl+C to cancel. Monitor: tail -f $LOGFILE"
@@ -836,6 +841,79 @@ rm -f "$PROMPT_FILE"
 CODE_END=$(date +%s)
 CODE_ELAPSED=$(( CODE_END - CODE_START ))
 log "Agent session completed in ${CODE_ELAPSED}s"
+
+# Only run downstream stages if code stage actually shipped a PR
+HAS_SHIPPED=false
+grep -q "FACTORY_RESULT:SUCCESS" "$LOGFILE" 2>/dev/null && HAS_SHIPPED=true
+
+# ── DOCUMENT (DOCUMENTATION — agent session) ──────────────
+if [ "$HAS_SHIPPED" = true ]; then
+  stage "DOCUMENT"
+  update_status "$TASK_NAME — documenting"
+  DOC_PROMPT_FILE=$(mktemp)
+  cat > "$DOC_PROMPT_FILE" <<DOC_EOF
+You are running the document stage of the shipyard factory.
+
+PROJECT: $REPO_NAME
+BRANCH: $BRANCH
+BASE: $BASE_BRANCH
+
+$(factory_stage "document" "$SHIPYARD/factory.md")
+
+Log format: plain text, no markdown, no ** or ## or [].
+DOC_EOF
+  run_agent "$DOC_PROMPT_FILE" --model sonnet --timeout 180 | ptee
+  rm -f "$DOC_PROMPT_FILE"
+fi
+
+# ── INSTRUMENT (OBSERVABILITY — agent session) ────────────
+if [ "$HAS_SHIPPED" = true ]; then
+  stage "INSTRUMENT"
+  update_status "$TASK_NAME — instrumenting"
+  INST_PROMPT_FILE=$(mktemp)
+  cat > "$INST_PROMPT_FILE" <<INST_EOF
+You are running the instrument stage of the shipyard factory.
+
+PROJECT: $REPO_NAME
+BRANCH: $BRANCH
+BASE: $BASE_BRANCH
+
+$(factory_stage "instrument" "$SHIPYARD/factory.md")
+
+Log format: plain text, no markdown, no ** or ## or [].
+INST_EOF
+  run_agent "$INST_PROMPT_FILE" --model sonnet --timeout 180 | ptee
+  rm -f "$INST_PROMPT_FILE"
+fi
+
+# ── AUDIT (QUALITY — file/function size checks) ───────────
+if [ "$HAS_SHIPPED" = true ]; then
+  stage "AUDIT"
+  update_status "$TASK_NAME — auditing"
+  AUDIT_WARN_COUNT=0
+  CHANGED_FILES=$(git diff "$BASE_BRANCH...$BRANCH" --name-only 2>/dev/null)
+  if [ -n "$CHANGED_FILES" ]; then
+    while IFS= read -r f; do
+      [ -z "$f" ] && continue
+      [ -f "$REPO_DIR/$f" ] || continue
+      flines=$(wc -l < "$REPO_DIR/$f" 2>/dev/null | tr -d ' ')
+      if [ -n "$flines" ] && [ "$flines" -gt 500 ]; then
+        log "WARN: $f exceeds 500 lines ($flines)"
+        AUDIT_WARN_COUNT=$((AUDIT_WARN_COUNT + 1))
+      fi
+      # New TODO/FIXME in committed code
+      if git diff "$BASE_BRANCH...$BRANCH" -- "$f" 2>/dev/null | grep -qE '^\+.*\b(TODO|FIXME)\b'; then
+        log "WARN: $f introduces TODO/FIXME"
+        AUDIT_WARN_COUNT=$((AUDIT_WARN_COUNT + 1))
+      fi
+    done <<< "$CHANGED_FILES"
+  fi
+  if [ "$AUDIT_WARN_COUNT" -eq 0 ]; then
+    log "Audit clean — no quality warnings"
+  else
+    log "Audit completed with $AUDIT_WARN_COUNT warning(s)"
+  fi
+fi
 
 # ── LINT (gates read from factory.md) ─────────────────────
 stage "LINT"
@@ -921,6 +999,36 @@ LINT_FIX_EOF
 
   if [ -n "$LINT_FAILURES" ]; then
     log "Could not fix all lint issues after $MAX_FIX_ATTEMPTS attempts"
+  fi
+fi
+
+# ── SECURE (SECURITY — pattern scan on diff) ──────────────
+if [ "$HAS_SHIPPED" = true ]; then
+  stage "SECURE"
+  update_status "$TASK_NAME — securing"
+  SECURE_WARN_COUNT=0
+  DIFF_TEXT=$(git diff "$BASE_BRANCH...$BRANCH" 2>/dev/null)
+  if [ -n "$DIFF_TEXT" ]; then
+    # Hardcoded credentials in added lines
+    if echo "$DIFF_TEXT" | grep -qE "^\+.*(api[_-]?key|secret[_-]?key|password|private[_-]?key|access[_-]?token)[[:space:]]*[:=][[:space:]]*['\"][^'\"]{8,}['\"]"; then
+      log "WARN: hardcoded credential pattern detected in diff"
+      SECURE_WARN_COUNT=$((SECURE_WARN_COUNT + 1))
+    fi
+    # eval() introduced
+    if echo "$DIFF_TEXT" | grep -qE "^\+.*\beval[[:space:]]*\("; then
+      log "WARN: eval() introduced in diff"
+      SECURE_WARN_COUNT=$((SECURE_WARN_COUNT + 1))
+    fi
+    # child_process.exec / execSync with interpolation
+    if echo "$DIFF_TEXT" | grep -qE "^\+.*(child_process\.)?exec(Sync)?[[:space:]]*\(.*\\\$\{"; then
+      log "WARN: shell exec with interpolation detected in diff"
+      SECURE_WARN_COUNT=$((SECURE_WARN_COUNT + 1))
+    fi
+  fi
+  if [ "$SECURE_WARN_COUNT" -eq 0 ]; then
+    log "Security checks passed"
+  else
+    log "Security audit found $SECURE_WARN_COUNT warning(s)"
   fi
 fi
 

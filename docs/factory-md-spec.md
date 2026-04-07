@@ -51,12 +51,13 @@ Optional location of the task queue. Defaults to `tasks/` if omitted.
 A stage is an H3 heading with the form:
 
 ```markdown
-### <name> (<type>)
+### <name> (<type>) — <CONTAINER>
 <body>
 ```
 
 - **`<name>`** is a lowercase identifier (`code`, `lint`, `ship`, `verify`, etc.). Frameworks recognize common names by convention.
 - **`<type>`** is `agentic`, `deterministic`, or `mixed`.
+- **`<CONTAINER>`** is optional. An uppercase taxonomy label preceded by an em-dash. Used for grouping in dashboards and reports.
 - **`<body>`** is markdown until the next H3 or H2. For `agentic` stages, write imperative numbered steps. For `deterministic` stages, write a bullet list of gates.
 
 ## Gate dispatch (deterministic stages)
@@ -88,19 +89,43 @@ A framework that recognizes "secrets" and "changelog" patterns will run those tw
 
 These names have conventional semantics. Frameworks should recognize them. Custom stages with other names are allowed.
 
-| Name | Type | Purpose |
+| Name | Type | Container | Purpose |
+|---|---|---|---|
+| `pick` | deterministic | TRIAGE | Choose the next task from the queue |
+| `route` | deterministic | TRIAGE | Resolve task to a repo |
+| `prepare` | deterministic | ENVIRONMENT | Pull default branch, create feature branch |
+| `scaffold` | deterministic | BUILD | Generate CI workflow if missing |
+| `code` | agentic | TEST | Implement, test, version, commit, push, PR |
+| `document` | agentic | DOCUMENTATION | Update README, doc comments, AGENTS.md for changed code |
+| `instrument` | agentic | OBSERVABILITY | Add logging / error reporting for new code paths |
+| `audit` | deterministic | QUALITY | File/function size, TODO/FIXME, complexity gates |
+| `lint` | deterministic | STYLE | Pre-PR gates (no secrets, changelog updated, etc.) |
+| `fix` | mixed | STYLE | Re-engage agent if lint fails |
+| `secure` | deterministic | SECURITY | Hardcoded credentials, eval, dangerous patterns |
+| `ship` | deterministic | SHIP | Confirm PR opened |
+| `ci` | mixed | SHIP | Watch CI; re-engage agent on failure |
+| `verify` | agentic | TEST | Visual / runtime verification |
+| `update` | deterministic | SHIP | Cleanup, move task to done, close issues |
+| `done` | deterministic | SHIP | Report final status |
+
+## Containers
+
+Stages are grouped into 10 quality containers. Containers are taxonomy — they describe *what kind of work* a stage does — not execution order. Multiple stages can share a container, and a single container can have stages at non-contiguous positions in the pipeline.
+
+| # | Container | Stages |
 |---|---|---|
-| `pick` | deterministic | Choose the next task from the queue |
-| `route` | deterministic | Resolve task to a repo |
-| `prepare` | deterministic | Pull, branch, scaffold CI |
-| `code` | agentic | Implement, test, version, commit, push, PR |
-| `lint` | deterministic | Pre-PR gates (no secrets, changelog updated, etc.) |
-| `fix` | mixed | Re-engage agent if lint fails |
-| `ship` | deterministic | Confirm PR opened |
-| `ci` | mixed | Watch CI; re-engage agent on failure |
-| `verify` | agentic | Visual / runtime verification |
-| `update` | deterministic | Cleanup, move task to done, close issues |
-| `done` | deterministic | Report final status |
+| 0 | TRIAGE | `pick`, `route` |
+| 1 | STYLE | `lint`, `fix` |
+| 2 | BUILD | `scaffold` |
+| 3 | TEST | `code`, `verify` |
+| 4 | DOCUMENTATION | `document` |
+| 5 | ENVIRONMENT | `prepare` |
+| 6 | QUALITY | `audit` |
+| 7 | OBSERVABILITY | `instrument` |
+| 8 | SECURITY | `secure` |
+| 9 | SHIP | `ship`, `ci`, `update`, `done` |
+
+Container labels are optional. A framework that doesn't care about containers reads only the stages list. A framework that wants to render a quality dashboard groups stages by container.
 
 ## Parsing rules
 

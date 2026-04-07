@@ -1,5 +1,8 @@
 # Changelog
 
+0.29.0
+  Add document instrument audit secure scaffold stages
+  Pipeline grows to 16 stages across 10 containers
 0.28.0
   Read lint gates from factory.md
   Custom gates fall through to agent

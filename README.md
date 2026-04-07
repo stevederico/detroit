@@ -146,21 +146,26 @@ Based on patterns from Ramp Inspect and Stripe Minions:
 
 ## Stages
 
-Defined declaratively in the `## stages` section of `factory.md`. Each stage is `agentic` (the agent does it), `deterministic` (the framework verifies gates), or `mixed` (deterministic detection with agentic remediation).
+Defined declaratively in the `## stages` section of `factory.md`. Each stage is `agentic` (the agent does it), `deterministic` (the framework verifies gates), or `mixed` (deterministic detection with agentic remediation). Each stage belongs to one of 10 quality containers (TRIAGE, STYLE, BUILD, TEST, DOCUMENTATION, ENVIRONMENT, QUALITY, OBSERVABILITY, SECURITY, SHIP).
 
-| Stage | Type | What |
-|-------|------|------|
-| `pick` | deterministic | Take first `.md` file from `tasks/` |
-| `route` | deterministic | Find repo locally, clone from GitHub, or create new |
-| `prepare` | deterministic | Detect default branch, git pull, create feature branch, generate CI |
-| `code` | agentic | Claude implements, tests, versions, commits, pushes, opens PR |
-| `lint` | deterministic | Shell gates: no secrets, changelog updated, version bumped |
-| `fix` | mixed | Claude fixes lint failures (max 2 attempts) |
-| `ship` | deterministic | Confirm PR opened, capture URL |
-| `ci` | mixed | Watch GitHub Actions, fix failures (max 2 attempts) |
-| `verify` | agentic | Agent reads diff, screenshots affected pages via agent-browser |
-| `update` | deterministic | Move task file to `tasks/done/`, close GitHub issue |
-| `done` | deterministic | Report result, return to default branch |
+| # | Stage | Type | Container | What |
+|---|-------|------|-----------|------|
+| 1 | `pick` | deterministic | TRIAGE | Take first `.md` file from `tasks/` |
+| 2 | `route` | deterministic | TRIAGE | Find repo locally, clone from GitHub, or create new |
+| 3 | `prepare` | deterministic | ENVIRONMENT | Detect default branch, git pull, create feature branch (worktree) |
+| 4 | `scaffold` | deterministic | BUILD | Generate `.github/workflows/ci.yml` if missing |
+| 5 | `code` | agentic | TEST | Claude implements, tests, versions, commits, pushes, opens PR |
+| 6 | `document` | agentic | DOCUMENTATION | Claude updates README, doc comments, AGENTS.md for changed code |
+| 7 | `instrument` | agentic | OBSERVABILITY | Claude adds logging / error reporting for new code paths |
+| 8 | `audit` | deterministic | QUALITY | File size, function size, TODO/FIXME warnings |
+| 9 | `lint` | deterministic | STYLE | Shell gates: no secrets, changelog updated, version bumped, tests pass |
+| 10 | `fix` | mixed | STYLE | Claude fixes lint failures (max 2 attempts) |
+| 11 | `secure` | deterministic | SECURITY | Hardcoded credentials, eval, dangerous patterns |
+| 12 | `ship` | deterministic | SHIP | Confirm PR opened, capture URL |
+| 13 | `ci` | mixed | SHIP | Watch GitHub Actions, fix failures (max 2 attempts) |
+| 14 | `verify` | agentic | TEST | Agent reads diff, screenshots affected pages via agent-browser |
+| 15 | `update` | deterministic | SHIP | Move task file to `tasks/done/`, close GitHub issue |
+| 16 | `done` | deterministic | SHIP | Report result, return to default branch |
 
 ## Configuration
 

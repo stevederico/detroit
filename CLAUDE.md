@@ -4,8 +4,8 @@ Autonomous code factory that reads task files from `tasks/` and ships them as PR
 
 ## Structure
 
-- `factory.sh` — factory pipeline. Deterministic stages interleaved with agentic Claude sessions.
-- `factory.md` — portable spec describing standards, workflow, validation, routing, and runtime. Injected into every Claude session. See `docs/factory-md-spec.md`.
+- `factory.sh` — factory pipeline runner. Reads stages from `factory.md` and executes them.
+- `factory.md` — portable spec declaring standards, stages, routing, and runtime. The `## stages` section defines the full pipeline declaratively. See `docs/factory-md-spec.md`.
 - `tasks/` — task queue. One markdown file per task. Completed tasks move to `tasks/done/`.
 - `logs/` — timestamped logs per run (gitignored)
 
@@ -19,24 +19,26 @@ Each file in `tasks/` is a task. The filename is the task name, the body is the 
 
 ## Factory Flow
 
-1. Pick first `.md` file from `tasks/`
-2. Route to repo (local → GitHub clone → create new)
-3. Detect default branch (`main`/`master`), git pull
-4. Generate CI workflow if repo has none (`.github/workflows/ci.yml`)
-5. Claude codes, tests, follows the `## workflow` section of `factory.md` (commit, push, PR) — output streams in real time
-6. Deterministic lint checks: no secrets, test failures, changelog, version bump
-7. Ship PR, watch GitHub Actions CI — fix failures (max 2 attempts)
-8. Verify: start dev server + backend, Claude screenshots affected pages via agent-browser
-9. Task file moved to `tasks/done/`
-10. Logs to `logs/{timestamp}.log`
+The pipeline runs as a sequence of stages declared in `factory.md` under `## stages`:
+
+1. **pick** — first `.md` file from `tasks/` (alphabetical, atomic lock)
+2. **route** — resolve task to a repo (local, GitHub, or new)
+3. **prepare** — pull default branch, create feature branch, generate CI workflow if missing
+4. **code** — Claude implements, tests, versions, commits, pushes, opens PR (one agent session, output streams in real time)
+5. **lint** — gates: no secrets, changelog updated, version bumped
+6. **fix** — re-engage Claude on lint failure (max 2 attempts)
+7. **ship** — confirm PR opened
+8. **ci** — watch GitHub Actions, re-engage Claude on failure (max 2 attempts)
+9. **verify** — Claude reads diff, screenshots affected pages via agent-browser
+10. **update** — move task file to `tasks/done/`, close GitHub issue
+11. **done** — return to default branch, log to `logs/{timestamp}.log`
 
 ## Configuration
 
-Edit `factory.md` to customize the factory. All configuration lives in named H2 sections:
+Edit `factory.md` to customize the factory. Configuration lives in named H2 sections:
 
-- `## standards` — coding standards injected into every Claude session
-- `## workflow` — step-by-step instructions Claude follows after coding (commit, push, PR, etc.)
-- `## validation` — deterministic gates a task must pass before being marked done
+- `## standards` — coding rules cross-cutting all agentic stages
+- `## stages` — the pipeline itself. Each H3 is one stage with a type tag (`agentic`, `deterministic`, `mixed`)
 - `## routing` — how tasks map to repos
 - `## runtime` — language/tooling hints
 

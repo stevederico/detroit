@@ -1,5 +1,8 @@
 # Changelog
 
+0.27.0
+  Declarative stages spec
+  Replace workflow with stages
 0.26.0
   Adopt factory.md spec
   Consolidate standards and workflow

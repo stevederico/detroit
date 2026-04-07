@@ -47,6 +47,30 @@ factory_section() {
   ' "$file"
 }
 
+# factory_stage <stage-name> <factory.md path>
+# Extracts the body of an H3 stage from the ## stages section of factory.md.
+# Strips the type tag in parens, e.g. "### code (agentic)" matches "code".
+# Stops at the next H3 (next stage) or H2 (next section).
+factory_stage() {
+  local stage="$1"
+  local file="$2"
+  awk -v target="$stage" '
+    BEGIN { found=0; in_stages=0; t=tolower(target) }
+    /^## / {
+      if (tolower($0) == "## stages") { in_stages=1; next }
+      if (in_stages) { in_stages=0; if (found) exit }
+    }
+    in_stages && /^### / {
+      if (found) exit
+      hdr = $0
+      sub(/^### */, "", hdr)
+      sub(/ *\(.*\)$/, "", hdr)
+      if (tolower(hdr) == t) { found=1; next }
+    }
+    found { print }
+  ' "$file"
+}
+
 # ── Agent configuration ───────────────────────────────────
 # SHIPYARD_AGENT: claude (default), dotbot
 # SHIPYARD_PROVIDER: xai (default) — provider for dotbot (xai, anthropic, openai, ollama)
@@ -759,8 +783,8 @@ Log format rules (follow exactly):
 Coding standards (enforce these regardless of project CLAUDE.md):
 $(factory_section "standards" "$SHIPYARD/factory.md")
 
-Workflow (BRANCH=$BRANCH, BASE_BRANCH=$BASE_BRANCH):
-$(factory_section "workflow" "$SHIPYARD/factory.md")
+Code stage instructions (BRANCH=$BRANCH, BASE_BRANCH=$BASE_BRANCH):
+$(factory_stage "code" "$SHIPYARD/factory.md")
 PROMPT_EOF
 
 # Stream agent output in real time

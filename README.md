@@ -146,29 +146,28 @@ Based on patterns from Ramp Inspect and Stripe Minions:
 
 ## Stages
 
+Defined declaratively in the `## stages` section of `factory.md`. Each stage is `agentic` (the agent does it), `deterministic` (the framework verifies gates), or `mixed` (deterministic detection with agentic remediation).
+
 | Stage | Type | What |
 |-------|------|------|
-| PICK | deterministic | Take first `.md` file from `tasks/` |
-| ROUTE | deterministic | Find repo locally, clone from GitHub, or create new |
-| PULL | deterministic | Detect default branch, git pull |
-| BRANCH | deterministic | Create feature branch, generate CI workflow if missing |
-| CODE | agentic | Claude implements (standards + workflow from `factory.md`) |
-| TEST | agentic | Claude runs tests (inside same session) |
-| LINT | deterministic | Shell checks: no secrets, test failures |
-| FIX | agentic | Claude fixes lint failures (max 2 attempts) |
-| SHIP | deterministic | Confirm PR was opened |
-| CI | deterministic + agentic | Watch GitHub Actions, fix failures (max 2 attempts) |
-| VERIFY | agentic | Agent reads diff, screenshots affected pages via agent-browser |
-| UPDATE | deterministic | Move task file to `tasks/done/`, close GitHub issue |
-| DONE | deterministic | Report result, return to default branch |
+| `pick` | deterministic | Take first `.md` file from `tasks/` |
+| `route` | deterministic | Find repo locally, clone from GitHub, or create new |
+| `prepare` | deterministic | Detect default branch, git pull, create feature branch, generate CI |
+| `code` | agentic | Claude implements, tests, versions, commits, pushes, opens PR |
+| `lint` | deterministic | Shell gates: no secrets, changelog updated, version bumped |
+| `fix` | mixed | Claude fixes lint failures (max 2 attempts) |
+| `ship` | deterministic | Confirm PR opened, capture URL |
+| `ci` | mixed | Watch GitHub Actions, fix failures (max 2 attempts) |
+| `verify` | agentic | Agent reads diff, screenshots affected pages via agent-browser |
+| `update` | deterministic | Move task file to `tasks/done/`, close GitHub issue |
+| `done` | deterministic | Report result, return to default branch |
 
 ## Configuration
 
-A single file controls what the factory tells the agent to do: **`factory.md`** at the repo root. It is a portable spec made of named H2 sections — see `docs/factory-md-spec.md` for the format.
+A single file controls the factory: **`factory.md`** at the repo root. It is a portable spec made of named H2 sections — see `docs/factory-md-spec.md` for the format.
 
 - `## standards` — coding standards (error handling, accessibility, naming, etc.)
-- `## workflow` — post-coding steps (commit, push, open PR, etc.)
-- `## validation` — gates a task must pass before being marked done
+- `## stages` — the declarative pipeline (each stage is an H3 with a type tag)
 - `## routing` — how tasks map to repos
 - `## runtime` — language/tooling hints
 

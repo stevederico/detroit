@@ -1,5 +1,8 @@
 # Changelog
 
+0.32.0
+  Extract factory-md as standalone repo
+  Point references at github.com/stevederico/factory-md
 0.31.0
   Strict rule prefix support
   Block pipeline on unrecognized strict rules

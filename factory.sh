@@ -33,7 +33,7 @@ ptee() { while IFS= read -r line; do echo "$line" >> "$LOGFILE"; echo "${PREFIX}
 
 # factory_section <section-name> <factory.md path>
 # Extracts the body of an H2 section from a factory.md file (case-insensitive).
-# See docs/factory-md-spec.md for the spec.
+# See https://github.com/stevederico/factory-md for the spec.
 factory_section() {
   local section="$1"
   local file="$2"
@@ -49,7 +49,8 @@ factory_section() {
 
 # factory_rules <factory.md path>
 # Concatenates every known factory.md section with a heading prefix so the
-# agent prompt contains every rule the factory declares. See docs/factory-md-spec.md.
+# agent prompt contains every rule the factory declares.
+# Spec: https://github.com/stevederico/factory-md
 factory_rules() {
   local file="$1"
   local section body

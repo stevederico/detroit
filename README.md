@@ -146,7 +146,7 @@ Based on patterns from Ramp Inspect and Stripe Minions:
 
 ## Configuration
 
-A single file controls the factory: **`factory.md`** at the repo root. A Dockerfile for code factories — all the standards an autonomous agent needs to ship code in a repo, in one file you can clone and run anywhere. See `docs/factory-md-spec.md` for the full spec.
+A single file controls the factory: **`factory.md`** at the repo root. A Dockerfile for code factories — all the standards an autonomous agent needs to ship code in a repo, in one file you can clone and run anywhere. See the [factory.md spec](https://github.com/stevederico/factory-md) for the full format.
 
 `factory.md` has 8 reserved sections. Each section is a bullet list of rules.
 

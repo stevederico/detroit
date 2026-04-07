@@ -5,7 +5,7 @@ Autonomous code factory that reads task files from `tasks/` and ships them as PR
 ## Structure
 
 - `factory.sh` — pipeline runner. Reads rules from `factory.md` and enforces them.
-- `factory.md` — portable spec of the standards the agent must follow. 8 H2 sections: `## style`, `## build`, `## testing`, `## documentation`, `## environment`, `## quality`, `## observability`, `## security`. Each bullet is one rule. See `docs/factory-md-spec.md`.
+- `factory.md` — portable spec of the standards the agent must follow. 8 H2 sections: `## style`, `## build`, `## testing`, `## documentation`, `## environment`, `## quality`, `## observability`, `## security`. Each bullet is one rule. Spec: https://github.com/stevederico/factory-md
 - `tasks/` — task queue. One markdown file per task. Completed tasks move to `tasks/done/`.
 - `logs/` — timestamped logs per run (gitignored)
 
@@ -38,4 +38,4 @@ Each file in `tasks/` is a task. The filename is the task name, the body is the 
 
 Edit `factory.md` to customize the factory. Every rule the factory enforces lives in one of the 8 reserved sections. Add a bullet, it becomes a rule. If the framework recognizes the bullet it runs as a gate; otherwise it is forwarded to the agent.
 
-`factory.md` is a portable spec — see `docs/factory-md-spec.md` for the full format.
+`factory.md` is a portable spec — see https://github.com/stevederico/factory-md for the full format.

@@ -11,7 +11,7 @@ lint gates read from factory.md
 add document instrument audit secure scaffold stages
 simplify factory.md to 8 sections
 strict rule prefix
-- publish factory-md spec as standalone repo
+publish factory-md spec as standalone repo
 - scheduleing daemon mode: --watch that polls tasks/ or uses fswatch, auto-processes new files or dotbot 
 - context injection: load target repo CLAUDE.md and representative files into prompt
 - sandbox-exceution - environment isolation: Docker or Modal sandbox per run (Ramp/Stripe parity)

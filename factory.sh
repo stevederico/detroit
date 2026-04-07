@@ -882,31 +882,46 @@ grep -q "FACTORY_RESULT:SUCCESS" "$LOGFILE" 2>/dev/null && HAS_SHIPPED=true
 
 # ── GATES (dispatch every rule bullet to check_gate) ─────
 # Reads every bullet from the 8 factory.md sections and runs each through
-# check_gate. Recognized rules are verified; unrecognized rules are forwarded
-# to the agent during FIX as additional constraints.
+# check_gate. Rules prefixed with `!` are strict: the framework must recognize
+# and verify them, or the pipeline fails. Plain rules fall through to the
+# agent when unrecognized.
 stage "GATES"
 update_status "$TASK_NAME — checking gates"
 GATE_FAILURES=""
 GATE_CUSTOM=""
 
 while IFS= read -r line; do
-  gate=$(echo "$line" | sed -E 's/^[[:space:]]*-[[:space:]]*//' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
-  [ -z "$gate" ] && continue
-  case "$gate" in
+  raw=$(echo "$line" | sed -E 's/^[[:space:]]*-[[:space:]]*//' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
+  [ -z "$raw" ] && continue
+  case "$raw" in
     \[*\]) continue ;;  # skip section header labels from factory_rules
+  esac
+
+  # Detect `!` strict prefix
+  strict=false
+  gate="$raw"
+  case "$raw" in
+    "!"*) strict=true; gate=$(echo "$raw" | sed -E 's/^![[:space:]]*//') ;;
   esac
 
   check_gate "$gate"
   case "$?" in
-    0) log "PASS: $gate" ;;
-    1) log "FAIL: $gate"
+    0) if [ "$strict" = true ]; then log "PASS: ! $gate"; else log "PASS: $gate"; fi ;;
+    1) if [ "$strict" = true ]; then log "FAIL: ! $gate"; else log "FAIL: $gate"; fi
        GATE_FAILURES="${GATE_FAILURES}\n- $gate" ;;
-    2) GATE_CUSTOM="${GATE_CUSTOM}\n- $gate" ;;
+    2) if [ "$strict" = true ]; then
+         log "FAIL: ! $gate (strict — framework has no check for this rule)"
+         GATE_FAILURES="${GATE_FAILURES}\n- $gate (strict: add a check_gate pattern or drop the !)"
+       else
+         log "FWD:  $gate"
+         GATE_CUSTOM="${GATE_CUSTOM}\n- $gate"
+       fi ;;
   esac
 done < <(factory_rules "$SHIPYARD/factory.md")
 
+GATE_FWD_COUNT=$(echo -e "$GATE_CUSTOM" | grep -c '^- ' || true)
 if [ -z "$GATE_FAILURES" ]; then
-  log "All recognized gates passed"
+  log "All strict gates passed ($GATE_FWD_COUNT plain rules forwarded to agent)"
 else
   log "Gate failures detected"
 fi
@@ -949,11 +964,21 @@ FIX_EOF
     # Re-run gates
     GATE_FAILURES=""
     while IFS= read -r line; do
-      gate=$(echo "$line" | sed -E 's/^[[:space:]]*-[[:space:]]*//' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
-      [ -z "$gate" ] && continue
-      case "$gate" in \[*\]) continue ;; esac
+      raw=$(echo "$line" | sed -E 's/^[[:space:]]*-[[:space:]]*//' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
+      [ -z "$raw" ] && continue
+      case "$raw" in \[*\]) continue ;; esac
+      strict=false
+      gate="$raw"
+      case "$raw" in
+        "!"*) strict=true; gate=$(echo "$raw" | sed -E 's/^![[:space:]]*//') ;;
+      esac
       check_gate "$gate"
-      [ "$?" = "1" ] && GATE_FAILURES="${GATE_FAILURES}\n- $gate"
+      rc=$?
+      if [ "$rc" = "1" ]; then
+        GATE_FAILURES="${GATE_FAILURES}\n- $gate"
+      elif [ "$rc" = "2" ] && [ "$strict" = true ]; then
+        GATE_FAILURES="${GATE_FAILURES}\n- $gate (strict: framework has no check)"
+      fi
     done < <(factory_rules "$SHIPYARD/factory.md")
 
     if [ -z "$GATE_FAILURES" ]; then

@@ -7,23 +7,25 @@ version: 1
 
 Autonomous code factory. Reads task files from `tasks/` and ships them as PRs.
 
+Rules prefixed with `!` are strict: the framework must verify them deterministically or the pipeline fails. Plain bullets may be trusted to the agent if the framework does not recognize them.
+
 ## style
 - camelCase functions, PascalCase components, UPPER_SNAKE_CASE constants
 - Booleans prefixed with `is`, `has`, or `should`
 - Functions max 50 lines, single responsibility, early returns, no magic numbers
 - Imports ordered: external then internal then relative
-- No secrets, .env, .pem, .key, credentials, or tokens in committed files
-- CHANGELOG.md updated per PR
+- ! No secrets, .env, .pem, .key, credentials, or tokens in committed files
+- ! CHANGELOG.md updated per PR
 
 ## build
 - node 20
 - gh CLI authenticated
 - CI workflow at `.github/workflows/ci.yml` (auto-generate if missing)
-- `package.json` version bumped per PR (minor bump by default)
+- ! `package.json` version bumped per PR (minor bump by default)
 
 ## testing
 - Vitest, colocated `.test.js` files
-- All tests must pass before a PR is opened
+- ! All tests must pass before a PR is opened
 - New code requires new tests
 
 ## documentation
@@ -39,9 +41,9 @@ Autonomous code factory. Reads task files from `tasks/` and ships them as PRs.
 - Detect default branch automatically (main or master)
 
 ## quality
-- No files over 500 lines
+- ! No files over 500 lines
 - No functions over 50 lines
-- No new TODO or FIXME introduced in the diff
+- ! No new TODO or FIXME introduced in the diff
 - Single responsibility per function
 
 ## observability
@@ -51,7 +53,7 @@ Autonomous code factory. Reads task files from `tasks/` and ships them as PRs.
 - Never swallow errors silently
 
 ## security
-- No hardcoded credentials, API keys, or access tokens
-- No `eval()` or equivalent
-- No `child_process.exec` with interpolated user input
+- ! No hardcoded credentials, API keys, or access tokens
+- ! No `eval()` or equivalent
+- ! No `child_process.exec` with interpolated user input
 - No shell injection or SQL concatenation patterns

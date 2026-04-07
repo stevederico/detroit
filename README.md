@@ -166,6 +166,15 @@ Every bullet is one rule. The framework reads each bullet and either:
 - **Runs it as a gate** if it recognizes the rule (e.g. "no secrets in diff", "tests pass")
 - **Forwards it to the agent** as an additional rule to honor if it doesn't recognize it
 
+Prefix a bullet with `!` to mark it **strict** — the framework must verify it deterministically or the pipeline fails. Use strict for security, correctness, and release-critical rules you refuse to trust a model on:
+
+```markdown
+## security
+- ! No hardcoded credentials
+- ! No eval
+- Dependency audit clean
+```
+
 Edit any section to match your preferences. `factory.md` is framework-agnostic — the same file can drive any autonomous agent pipeline, not just Shipyard.
 
 ## Pipeline

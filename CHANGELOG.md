@@ -1,5 +1,8 @@
 # Changelog
 
+0.31.0
+  Strict rule prefix support
+  Block pipeline on unrecognized strict rules
 0.30.0
   Simplify factory.md to 8 sections
   Collapse pipeline stages into gates dispatcher

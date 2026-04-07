@@ -43,22 +43,39 @@ Frameworks read each bullet and decide what to do with it:
 
 The spec does not prescribe which bullets must be gates vs hints vs forwarded. Authors write rules in plain English; frameworks do the best they can and forward the rest.
 
+## Strict rules (`!` prefix)
+
+A rule prefixed with `!` is **strict**: it must be verified by deterministic code. If the framework does not recognize the rule, the pipeline fails — the rule is never trusted to the agent alone.
+
+```markdown
+## security
+- ! No hardcoded credentials
+- ! No eval
+- Dependency audit clean
+```
+
+Here the first two bullets block the pipeline unless a deterministic check exists for them. The third falls through to the agent if unrecognized.
+
+Use strict prefixes for rules you refuse to trust a model on — security gates, correctness invariants, release-critical checks. Leave rules plain when natural-language enforcement by the agent is acceptable.
+
+The `!` is stripped before matching, so `! No eval` and `No eval` hit the same check implementation. Only the dispatch behavior on the unrecognized path differs.
+
 ## Minimal example
 
 ```markdown
 ## style
 - camelCase functions, PascalCase components
 - Functions max 50 lines
-- No secrets in diff
-- CHANGELOG updated per PR
+- ! No secrets in diff
+- ! CHANGELOG updated per PR
 
 ## testing
 - Vitest, colocated .test.js
-- All tests pass before PR
+- ! All tests pass before PR
 
 ## security
-- No hardcoded credentials
-- No eval
+- ! No hardcoded credentials
+- ! No eval
 ```
 
 ## Full example
@@ -75,17 +92,17 @@ version: 1
 - camelCase functions, PascalCase components, UPPER_SNAKE constants
 - Functions max 50 lines, single responsibility, early returns
 - Imports: external then internal then relative
-- No secrets, .env, .pem, .key in diff
-- CHANGELOG.md updated per PR
+- ! No secrets, .env, .pem, .key in diff
+- ! CHANGELOG.md updated per PR
 
 ## build
 - node 20
 - CI workflow at .github/workflows/ci.yml (auto-generate if missing)
-- package.json version bumped per PR
+- ! package.json version bumped per PR
 
 ## testing
 - Vitest, colocated .test.js
-- All tests must pass before PR opens
+- ! All tests must pass before PR opens
 - New code requires new tests
 
 ## documentation
@@ -99,8 +116,8 @@ version: 1
 - Feature branches, never commit to default
 
 ## quality
-- No files over 500 lines
-- No new TODO/FIXME in diff
+- ! No files over 500 lines
+- ! No new TODO/FIXME in diff
 - No function over 50 lines
 
 ## observability
@@ -109,8 +126,8 @@ version: 1
 - Never swallow errors silently
 
 ## security
-- No hardcoded credentials, API keys, or tokens
-- No eval, no child_process with string interpolation
+- ! No hardcoded credentials, API keys, or tokens
+- ! No eval, no child_process with string interpolation
 - No dangerous shell patterns
 ````
 
@@ -118,9 +135,10 @@ version: 1
 
 1. Section headings are matched case-insensitively against the 8 reserved names.
 2. Bullets can use `-`, `*`, or `+` markers.
-3. Unknown sections are preserved and ignored.
-4. YAML frontmatter is allowed for metadata: `name`, `version`, `framework_min_version`.
-5. Anything before the first H2 is preamble.
+3. A leading `!` (before or after whitespace) marks a bullet as strict.
+4. Unknown sections are preserved and ignored.
+5. YAML frontmatter is allowed for metadata: `name`, `version`, `framework_min_version`.
+6. Anything before the first H2 is preamble.
 
 ## Spec versioning
 

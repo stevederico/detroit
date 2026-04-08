@@ -71,6 +71,20 @@ check_gate() {
   local gate_lower
   gate_lower=$(echo "$gate" | tr '[:upper:]' '[:lower:]')
 
+  # Inline `check: <shell>` suffix takes precedence over keyword matching.
+  # Format: bullet text `check: <shell command>`
+  # Exit 0 = pass, non-zero = fail. Any bullet with a recognized check: suffix
+  # is deterministically verified and never falls through to "custom".
+  local inline_check
+  inline_check=$(echo "$gate" | grep -oE '`check:[^`]*`' | tail -n1 | sed -E 's/^`check:[[:space:]]*//; s/`$//')
+  if [ -n "$inline_check" ]; then
+    ( cd "$REPO_DIR" 2>/dev/null || true
+      BASE_BRANCH="$BASE_BRANCH" BRANCH="$BRANCH" REPO_DIR="$REPO_DIR" LOGFILE="$LOGFILE" \
+        bash -c "$inline_check" >/dev/null 2>&1
+    )
+    return $?
+  fi
+
   case "$gate_lower" in
     *secret*|*.env*|*.pem*|*.key*|*credential*|*token*)
       git diff "$BASE_BRANCH...$BRANCH" --name-only 2>/dev/null \

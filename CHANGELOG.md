@@ -1,5 +1,9 @@
 # Changelog
 
+0.33.0
+  Support inline check suffix on rules
+  Run rule-local shell checks in GATES
+
 0.32.0
   Extract factory-md as standalone repo
   Point references at github.com/stevederico/factory-md

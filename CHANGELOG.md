@@ -1,5 +1,10 @@
 # Changelog
 
+0.34.0
+  Stage-aware gates (factory.md v2)
+  Read ## stages section
+  Dedupe rules across stages
+
 0.33.0
   Support inline check suffix on rules
   Run rule-local shell checks in GATES

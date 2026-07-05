@@ -1,6 +1,6 @@
 ---
 name: shipyard
-version: 1
+version: 2
 ---
 
 # shipyard factory
@@ -8,6 +8,14 @@ version: 1
 Autonomous code factory. Reads task files from `tasks/` and ships them as PRs.
 
 Rules prefixed with `!` are strict: the framework must verify them deterministically or the pipeline fails. Plain bullets may be trusted to the agent if the framework does not recognize them.
+
+## stages
+- triage: prompt
+- spec: prompt
+- build: style, build, environment
+- check: testing, quality, documentation, security
+- ship: security, documentation
+- monitor: observability
 
 ## style
 - camelCase functions, PascalCase components, UPPER_SNAKE_CASE constants

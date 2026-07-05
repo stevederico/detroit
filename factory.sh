@@ -61,6 +61,40 @@ factory_rules() {
   done
 }
 
+# factory_stages <factory.md path>
+# Emits the v2 `## stages` section as `stage:value` lines (stage lowercased).
+# Empty output means no stage layer (v1 file) — callers fall back to flat gating.
+# Spec: https://github.com/stevederico/factory-md
+factory_stages() {
+  local file="$1" line stage val
+  factory_section "stages" "$file" | while IFS= read -r line; do
+    line=$(echo "$line" | sed -E 's/^[[:space:]]*[-*+][[:space:]]*//')
+    case "$line" in
+      *:*)
+        stage=$(echo "${line%%:*}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
+        val=$(echo "${line#*:}" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
+        [ -n "$stage" ] && printf '%s:%s\n' "$stage" "$val" ;;
+    esac
+  done
+}
+
+# factory_rules_for_stage <categories-csv> <factory.md path>
+# Like factory_rules, but only the named gate-category sections (comma list).
+factory_rules_for_stage() {
+  local csv="$1" file="$2" section body
+  local IFS=,
+  for section in $csv; do
+    section=$(echo "$section" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+    case "$section" in
+      style|build|testing|documentation|environment|quality|observability|security) ;;
+      *) continue ;;
+    esac
+    body=$(factory_section "$section" "$file")
+    [ -z "$body" ] && continue
+    printf '\n[%s]\n%s\n' "$section" "$body"
+  done
+}
+
 # check_gate <gate-text>
 # Dispatches a natural-language rule bullet to a framework-recognized check.
 # Uses bash glob keyword matching against gate text.
@@ -145,6 +179,69 @@ check_gate() {
       return 2
       ;;
   esac
+}
+
+# run_gate_bullets
+# Reads rule-bullet lines on stdin and dispatches each through check_gate.
+# Appends verified failures to GATE_FAILURES and forwarded (unrecognized, plain)
+# rules to GATE_CUSTOM — both outer-scope. Must be fed via process substitution,
+# not a pipe, so it runs in the caller's shell and its writes persist.
+run_gate_bullets() {
+  local line raw strict gate
+  while IFS= read -r line; do
+    raw=$(echo "$line" | sed -E 's/^[[:space:]]*-[[:space:]]*//' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
+    [ -z "$raw" ] && continue
+    case "$raw" in \[*\]) continue ;; esac  # skip section header labels
+    strict=false
+    gate="$raw"
+    case "$raw" in
+      "!"*) strict=true; gate=$(echo "$raw" | sed -E 's/^![[:space:]]*//') ;;
+    esac
+    # Dedupe: a category may be declared in more than one stage (e.g. security in
+    # check and ship). Checks are deterministic with no state change between stage
+    # groups, so gate each unique rule once. (Pure-bash membership; bash 3.2-safe.)
+    case $'\n'"$GATE_SEEN"$'\n' in
+      *$'\n'"$gate"$'\n'*) continue ;;
+    esac
+    GATE_SEEN="${GATE_SEEN}${gate}"$'\n'
+    check_gate "$gate"
+    case "$?" in
+      0) if [ "$strict" = true ]; then log "PASS: ! $gate"; else log "PASS: $gate"; fi ;;
+      1) if [ "$strict" = true ]; then log "FAIL: ! $gate"; else log "FAIL: $gate"; fi
+         GATE_FAILURES="${GATE_FAILURES}\n- $gate" ;;
+      2) if [ "$strict" = true ]; then
+           log "FAIL: ! $gate (strict — framework has no check for this rule)"
+           GATE_FAILURES="${GATE_FAILURES}\n- $gate (strict: add a check_gate pattern or drop the !)"
+         else
+           log "FWD:  $gate"
+           GATE_CUSTOM="${GATE_CUSTOM}\n- $gate"
+         fi ;;
+    esac
+  done
+}
+
+# run_all_gates <factory.md path>
+# Resets the gate accumulators, then gates every rule. If the factory declares a
+# v2 `## stages` section, gates run grouped by stage in declared order (prompt
+# stages like triage/spec are skipped here). Otherwise every section is gated in
+# one flat pass — identical to v1 behavior.
+run_all_gates() {
+  local file="$1" stages sline sname sval
+  GATE_FAILURES=""
+  GATE_CUSTOM=""
+  GATE_SEEN=""
+  stages=$(factory_stages "$file")
+  if [ -n "$stages" ]; then
+    while IFS= read -r sline; do
+      sname="${sline%%:*}"
+      sval="${sline#*:}"
+      [ "$sval" = "prompt" ] && continue
+      log "── gate stage: $sname → $sval"
+      run_gate_bullets < <(factory_rules_for_stage "$sval" "$file")
+    done <<< "$stages"
+  else
+    run_gate_bullets < <(factory_rules "$file")
+  fi
 }
 
 # ── Agent configuration ───────────────────────────────────
@@ -902,37 +999,7 @@ grep -q "FACTORY_RESULT:SUCCESS" "$LOGFILE" 2>/dev/null && HAS_SHIPPED=true
 # agent when unrecognized.
 stage "GATES"
 update_status "$TASK_NAME — checking gates"
-GATE_FAILURES=""
-GATE_CUSTOM=""
-
-while IFS= read -r line; do
-  raw=$(echo "$line" | sed -E 's/^[[:space:]]*-[[:space:]]*//' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
-  [ -z "$raw" ] && continue
-  case "$raw" in
-    \[*\]) continue ;;  # skip section header labels from factory_rules
-  esac
-
-  # Detect `!` strict prefix
-  strict=false
-  gate="$raw"
-  case "$raw" in
-    "!"*) strict=true; gate=$(echo "$raw" | sed -E 's/^![[:space:]]*//') ;;
-  esac
-
-  check_gate "$gate"
-  case "$?" in
-    0) if [ "$strict" = true ]; then log "PASS: ! $gate"; else log "PASS: $gate"; fi ;;
-    1) if [ "$strict" = true ]; then log "FAIL: ! $gate"; else log "FAIL: $gate"; fi
-       GATE_FAILURES="${GATE_FAILURES}\n- $gate" ;;
-    2) if [ "$strict" = true ]; then
-         log "FAIL: ! $gate (strict — framework has no check for this rule)"
-         GATE_FAILURES="${GATE_FAILURES}\n- $gate (strict: add a check_gate pattern or drop the !)"
-       else
-         log "FWD:  $gate"
-         GATE_CUSTOM="${GATE_CUSTOM}\n- $gate"
-       fi ;;
-  esac
-done < <(factory_rules "$SHIPYARD/factory.md")
+run_all_gates "$SHIPYARD/factory.md"
 
 GATE_FWD_COUNT=$(echo -e "$GATE_CUSTOM" | grep -c '^- ' || true)
 if [ -z "$GATE_FAILURES" ]; then
@@ -976,25 +1043,8 @@ FIX_EOF
     run_agent "$FIX_PROMPT_FILE" --model sonnet --timeout 120 | ptee
     rm -f "$FIX_PROMPT_FILE"
 
-    # Re-run gates
-    GATE_FAILURES=""
-    while IFS= read -r line; do
-      raw=$(echo "$line" | sed -E 's/^[[:space:]]*-[[:space:]]*//' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
-      [ -z "$raw" ] && continue
-      case "$raw" in \[*\]) continue ;; esac
-      strict=false
-      gate="$raw"
-      case "$raw" in
-        "!"*) strict=true; gate=$(echo "$raw" | sed -E 's/^![[:space:]]*//') ;;
-      esac
-      check_gate "$gate"
-      rc=$?
-      if [ "$rc" = "1" ]; then
-        GATE_FAILURES="${GATE_FAILURES}\n- $gate"
-      elif [ "$rc" = "2" ] && [ "$strict" = true ]; then
-        GATE_FAILURES="${GATE_FAILURES}\n- $gate (strict: framework has no check)"
-      fi
-    done < <(factory_rules "$SHIPYARD/factory.md")
+    # Re-run gates (stage-aware; resets accumulators)
+    run_all_gates "$SHIPYARD/factory.md"
 
     if [ -z "$GATE_FAILURES" ]; then
       log "All gate failures fixed"

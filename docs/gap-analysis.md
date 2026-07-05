@@ -1,8 +1,8 @@
-# Gap Analysis: Shipyard vs Ramp Inspect vs Stripe Minions
+# Gap Analysis: Detroit vs Ramp Inspect vs Stripe Minions
 
 Ramp and Stripe are running code factories at enterprise scale — hundreds of concurrent sandboxed
 VMs, integrated into Slack/Sentry/Datadog, shipping 30-50% of their merged PRs autonomously.
-Shipyard is a shell script on your laptop doing the same core loop: task in, code, test, PR out.
+Detroit is a shell script on your laptop doing the same core loop: task in, code, test, PR out.
 
 The original gaps (self-verification, CI retry, parallel execution) have all been closed.
 Two structural gaps remain: environment isolation and observability.
@@ -11,10 +11,10 @@ Two structural gaps remain: environment isolation and observability.
 
 ## At parity
 
-| Capability | Ramp | Stripe | Shipyard |
+| Capability | Ramp | Stripe | Detroit |
 |---|---|---|---|
 | Task queue | Slack, web, Chrome ext, GitHub PR comments | Slack, web UI, internal system triggers | `tasks/` markdown files + `--issues` GitHub sync |
-| Branch isolation | Per-sandbox branches on Modal | Devbox branches on EC2 | Worktree-isolated `shipyard/` branches |
+| Branch isolation | Per-sandbox branches on Modal | Devbox branches on EC2 | Worktree-isolated `detroit/` branches |
 | Autonomous coding | OpenCode in Modal sandbox | Goose fork (models undisclosed) | Claude Code `-p` |
 | PR creation | GitHub App + user tokens | GitHub | `gh pr create` (via `## workflow` in `factory.md`) |
 | Deterministic + agentic stages | Deterministic infra + agentic OpenCode | Blueprints: deterministic nodes + agentic nodes | Multi-stage pipeline (PICK, ROUTE, PULL, BRANCH, CODE, LINT, FIX, SHIP, VERIFY, UPDATE) |
@@ -40,29 +40,29 @@ startup from snapshot takes seconds. Stripe uses pre-warmed EC2 devboxes that pr
 seconds, pre-loaded with their full git repo, Bazel caches, and code-gen services. Both are
 isolated from production.
 
-Shipyard runs on your Mac. It shares local state — if a factory run messes up a database or
+Detroit runs on your Mac. It shares local state — if a factory run messes up a database or
 leaves ports occupied, it affects your next run. Worktrees handle code isolation and most projects
 use SQLite (file-based, no shared server), so this is less painful than it sounds. Closing it
 would require Docker or Modal per run — not justified for solo use yet.
 
 **Observability integration.** Ramp queries Sentry for new errors and Datadog for metric
-regressions after shipping. Stripe's agents check CI results and telemetry. Shipyard verifies
+regressions after shipping. Stripe's agents check CI results and telemetry. Detroit verifies
 against the dev server pre-merge but doesn't watch production post-deploy. Next step: a
 post-deploy health check that curls the production URL and checks for 200s.
 
 **Intake breadth.** Ramp has five entry points: Slack, Chrome extension (visual element selection),
 web interface, GitHub PR comments, and VS Code. Stripe triggers from Slack, a web UI, and internal
-system buttons (e.g., flaky-test auto-tickets). Shipyard triggers from markdown files and GitHub
+system buttons (e.g., flaky-test auto-tickets). Detroit triggers from markdown files and GitHub
 issues — ideal for solo, but a team would want Slack or web intake.
 
 ---
 
-## Where Shipyard is ahead
+## Where Detroit is ahead
 
 **Zero infrastructure.** Ramp needs Modal + Cloudflare Durable Objects. Stripe needs EC2 devboxes.
-Shipyard needs `bash factory.sh`. One file, no cloud dependencies, runs on a laptop.
+Detroit needs `bash factory.sh`. One file, no cloud dependencies, runs on a laptop.
 
-**Self-healing verify loop.** Ramp and Stripe run verification as a gate. Shipyard's VERIFY stage
+**Self-healing verify loop.** Ramp and Stripe run verification as a gate. Detroit's VERIFY stage
 detects failures and triggers a fix session automatically — verify, catch issues, fix, re-verify —
 before marking the task done.
 

@@ -1,9 +1,9 @@
 ---
-name: shipyard
+name: detroit
 version: 2
 ---
 
-# shipyard factory
+# detroit factory
 
 Autonomous code factory. Reads task files from `tasks/` and ships them as PRs.
 

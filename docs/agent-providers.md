@@ -1,6 +1,6 @@
 # Agent Providers
 
-Shipyard currently hardcodes Claude Code CLI. This doc captures research on making the agent layer swappable.
+Detroit currently hardcodes Claude Code CLI. This doc captures research on making the agent layer swappable.
 
 ## Current coupling
 
@@ -39,7 +39,7 @@ OpenCode advantages over CLI swapping:
 
 ### 1. Swap CLI flags (minimal)
 
-Abstract the 6 call sites into a `run_agent()` function. Config var `SHIPYARD_AGENT=claude|codex|gemini|aider` selects the CLI and flags. Ship today, low effort.
+Abstract the 6 call sites into a `run_agent()` function. Config var `DETROIT_AGENT=claude|codex|gemini|aider` selects the CLI and flags. Ship today, low effort.
 
 Pros: simple, no new deps, keeps shell script identity
 Cons: each CLI has different streaming formats, error handling, quirks

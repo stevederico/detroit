@@ -1,5 +1,9 @@
 # Changelog
 
+0.36.0
+  Rename check stage to test
+  check: keyword and check_gate unchanged
+
 0.35.0
   Rename spec stage to plan
   PLAN stage, plan.md, route: plan

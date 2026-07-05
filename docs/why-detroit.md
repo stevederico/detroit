@@ -1,8 +1,8 @@
-# Why Shipyard
+# Why Detroit
 
-Shipyard does the same thing as GitHub Copilot Coding Agent and Claude for GitHub — task in, PR out, automated. The difference is it's a shell script you own.
+Detroit does the same thing as GitHub Copilot Coding Agent and Claude for GitHub — task in, PR out, automated. The difference is it's a shell script you own.
 
-## What Shipyard has that they don't
+## What Detroit has that they don't
 
 - **Task queue with priority** — file-based, numbered for order, not one-off prompts
 - **Configurable standards and workflow** — edit `factory.md` (a portable, framework-agnostic spec) to control exactly what the agent does
@@ -11,12 +11,12 @@ Shipyard does the same thing as GitHub Copilot Coding Agent and Claude for GitHu
 - **GitHub issues integration** — pull labeled issues into the queue, close them on completion
 - **No vendor lock-in** — swap Claude for another model, change the pipeline, fork it
 
-## What they have that Shipyard doesn't
+## What they have that Detroit doesn't
 
 - Hosted infrastructure (no local machine needed)
 - Web UI
 - No setup
 
-## Who is Shipyard for
+## Who is Detroit for
 
 Developers who want to own their code factory. Same idea as self-hosting vs SaaS — you trade convenience for control.

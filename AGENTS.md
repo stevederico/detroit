@@ -1,4 +1,4 @@
-# Shipyard
+# Detroit
 
 Autonomous code factory that reads task files from `tasks/` and ships them as PRs.
 

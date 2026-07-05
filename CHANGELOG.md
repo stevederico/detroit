@@ -1,5 +1,9 @@
 # Changelog
 
+0.39.0
+  WebP-only banner
+  Drop jpg fallback
+
 0.38.0
   New banner image
 

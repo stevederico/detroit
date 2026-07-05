@@ -1,6 +1,6 @@
 ---
 name: shipyard
-version: 1
+version: 2
 ---
 
 # shipyard factory
@@ -8,6 +8,27 @@ version: 1
 Autonomous code factory. Reads task files from `tasks/` and ships them as PRs.
 
 Rules prefixed with `!` are strict: the framework must verify them deterministically or the pipeline fails. Plain bullets may be trusted to the agent if the framework does not recognize them.
+
+## stages
+- triage: prompt
+- spec: prompt
+- build: style, build, environment
+- check: testing, quality, documentation, security
+- ship: security, documentation
+- monitor: observability
+
+## triage
+Classify the task, then respond with exactly one line — `route: build` or `route: spec` — plus a one-sentence reason.
+- route: build — simple, unambiguous, single-file, no new dependency.
+- route: spec — new surface, more than one subsystem, schema/behavior change, or any new dependency.
+- When in doubt, route: spec.
+
+## spec
+Fill this template into spec.md; it is the plan the build stage implements.
+- Intent: what changes for the user, and the invariant that must hold after.
+- Out of scope: what this explicitly does not do.
+- Targets: files/functions to touch, with paths; any new dependency.
+- Acceptance: checks that prove it works — each a command or an observable behavior.
 
 ## style
 - camelCase functions, PascalCase components, UPPER_SNAKE_CASE constants

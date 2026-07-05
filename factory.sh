@@ -61,6 +61,40 @@ factory_rules() {
   done
 }
 
+# factory_stages <factory.md path>
+# Emits the v2 `## stages` section as `stage:value` lines (stage lowercased).
+# Empty output means no stage layer (v1 file) — callers fall back to flat gating.
+# Spec: https://github.com/stevederico/factory-md
+factory_stages() {
+  local file="$1" line stage val
+  factory_section "stages" "$file" | while IFS= read -r line; do
+    line=$(echo "$line" | sed -E 's/^[[:space:]]*[-*+][[:space:]]*//')
+    case "$line" in
+      *:*)
+        stage=$(echo "${line%%:*}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
+        val=$(echo "${line#*:}" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
+        [ -n "$stage" ] && printf '%s:%s\n' "$stage" "$val" ;;
+    esac
+  done
+}
+
+# factory_rules_for_stage <categories-csv> <factory.md path>
+# Like factory_rules, but only the named gate-category sections (comma list).
+factory_rules_for_stage() {
+  local csv="$1" file="$2" section body
+  local IFS=,
+  for section in $csv; do
+    section=$(echo "$section" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+    case "$section" in
+      style|build|testing|documentation|environment|quality|observability|security) ;;
+      *) continue ;;
+    esac
+    body=$(factory_section "$section" "$file")
+    [ -z "$body" ] && continue
+    printf '\n[%s]\n%s\n' "$section" "$body"
+  done
+}
+
 # check_gate <gate-text>
 # Dispatches a natural-language rule bullet to a framework-recognized check.
 # Uses bash glob keyword matching against gate text.
@@ -147,10 +181,73 @@ check_gate() {
   esac
 }
 
+# run_gate_bullets
+# Reads rule-bullet lines on stdin and dispatches each through check_gate.
+# Appends verified failures to GATE_FAILURES and forwarded (unrecognized, plain)
+# rules to GATE_CUSTOM — both outer-scope. Must be fed via process substitution,
+# not a pipe, so it runs in the caller's shell and its writes persist.
+run_gate_bullets() {
+  local line raw strict gate
+  while IFS= read -r line; do
+    raw=$(echo "$line" | sed -E 's/^[[:space:]]*-[[:space:]]*//' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
+    [ -z "$raw" ] && continue
+    case "$raw" in \[*\]) continue ;; esac  # skip section header labels
+    strict=false
+    gate="$raw"
+    case "$raw" in
+      "!"*) strict=true; gate=$(echo "$raw" | sed -E 's/^![[:space:]]*//') ;;
+    esac
+    # Dedupe: a category may be declared in more than one stage (e.g. security in
+    # check and ship). Checks are deterministic with no state change between stage
+    # groups, so gate each unique rule once. (Pure-bash membership; bash 3.2-safe.)
+    case $'\n'"$GATE_SEEN"$'\n' in
+      *$'\n'"$gate"$'\n'*) continue ;;
+    esac
+    GATE_SEEN="${GATE_SEEN}${gate}"$'\n'
+    check_gate "$gate"
+    case "$?" in
+      0) if [ "$strict" = true ]; then log "PASS: ! $gate"; else log "PASS: $gate"; fi ;;
+      1) if [ "$strict" = true ]; then log "FAIL: ! $gate"; else log "FAIL: $gate"; fi
+         GATE_FAILURES="${GATE_FAILURES}\n- $gate" ;;
+      2) if [ "$strict" = true ]; then
+           log "FAIL: ! $gate (strict — framework has no check for this rule)"
+           GATE_FAILURES="${GATE_FAILURES}\n- $gate (strict: add a check_gate pattern or drop the !)"
+         else
+           log "FWD:  $gate"
+           GATE_CUSTOM="${GATE_CUSTOM}\n- $gate"
+         fi ;;
+    esac
+  done
+}
+
+# run_all_gates <factory.md path>
+# Resets the gate accumulators, then gates every rule. If the factory declares a
+# v2 `## stages` section, gates run grouped by stage in declared order (prompt
+# stages like triage/spec are skipped here). Otherwise every section is gated in
+# one flat pass — identical to v1 behavior.
+run_all_gates() {
+  local file="$1" stages sline sname sval
+  GATE_FAILURES=""
+  GATE_CUSTOM=""
+  GATE_SEEN=""
+  stages=$(factory_stages "$file")
+  if [ -n "$stages" ]; then
+    while IFS= read -r sline; do
+      sname="${sline%%:*}"
+      sval="${sline#*:}"
+      [ "$sval" = "prompt" ] && continue
+      log "── gate stage: $sname → $sval"
+      run_gate_bullets < <(factory_rules_for_stage "$sval" "$file")
+    done <<< "$stages"
+  else
+    run_gate_bullets < <(factory_rules "$file")
+  fi
+}
+
 # ── Agent configuration ───────────────────────────────────
-# SHIPYARD_AGENT: claude (default), dotbot
+# SHIPYARD_AGENT: claude (default), dotbot, grok
 # SHIPYARD_PROVIDER: xai (default) — provider for dotbot (xai, anthropic, openai, ollama)
-# SHIPYARD_MODEL: model override for dotbot
+# SHIPYARD_MODEL: model override for dotbot and grok (grok needs XAI_API_KEY set)
 SHIPYARD_CLI="${SHIPYARD_AGENT:-claude}"
 
 # run_agent <prompt_file> [--model <model>] [--timeout <secs>] [--timeout-msg <msg>] [--verbose]
@@ -232,6 +329,35 @@ for line in sys.stdin:
       else
         dotbot "$prompt" "${args[@]}" 2>/dev/null
       fi
+      ;;
+    grok)
+      # Official xAI Grok CLI (`grok`). Needs XAI_API_KEY. Like dotbot, ignores
+      # the caller's --model alias (claude-specific) and honors SHIPYARD_MODEL.
+      # Docs: https://docs.x.ai/build/cli/headless-scripting
+      local -a args=(--no-auto-update -p "$prompt" --output-format streaming-json)
+      [ -n "${SHIPYARD_MODEL:-}" ] && args+=(--model "$SHIPYARD_MODEL")
+
+      grok "${args[@]}" 2>/dev/null | \
+        python3 -uc "
+import sys, json, signal
+timeout = $timeout_secs
+tmsg = '''$timeout_msg'''
+if timeout > 0:
+    signal.alarm(timeout)
+    signal.signal(signal.SIGALRM, lambda *_: (print(tmsg, flush=True), sys.exit(0)))
+for line in sys.stdin:
+    line = line.strip()
+    if not line: continue
+    try: event = json.loads(line)
+    except: continue
+    update = event.get('params', {}).get('update', {})
+    if not isinstance(update, dict): continue
+    if update.get('sessionUpdate') == 'agent_message_chunk':
+        content = update.get('content', {})
+        text = content.get('text', '') if isinstance(content, dict) else ''
+        if text: print(text, end='', flush=True)
+print('', flush=True)
+"
       ;;
     *)
       log "Unknown agent: $SHIPYARD_CLI"
@@ -836,6 +962,72 @@ if [ "$DRY_RUN" = true ]; then
 fi
 
 # ── CODE (TEST — agent session) ───────────────────────────
+# ── TRIAGE + SPEC (factory.md v2 pre-code prompt stages) ──
+# Run only when the factory declares them as `prompt` stages and provides a
+# `## triage` / `## spec` body. Unattended by default; SHIPYARD_APPROVE_SPEC=1
+# adds an interactive spec-approval gate. Threads the resulting spec into CODE.
+TASK_ROUTE="build"
+SPEC_DOC=""
+if [ "$DRY_RUN" = false ]; then
+  FACTORY_STAGES=$(factory_stages "$SHIPYARD/factory.md")
+  TRIAGE_BODY=$(factory_section "triage" "$SHIPYARD/factory.md")
+  if echo "$FACTORY_STAGES" | grep -q '^triage:prompt$' && [ -n "$TRIAGE_BODY" ]; then
+    stage "TRIAGE"
+    update_status "$TASK_NAME — triaging"
+    TRIAGE_PROMPT_FILE=$(mktemp)
+    cat > "$TRIAGE_PROMPT_FILE" <<TRIAGE_EOF
+$TRIAGE_BODY
+
+--- TASK ---
+$TASK_PROMPT
+--- END TASK ---
+
+Respond with exactly one line — "route: build" or "route: spec" — then a one-sentence reason. Do nothing else; do not touch the repo.
+TRIAGE_EOF
+    TRIAGE_OUT=$(run_agent "$TRIAGE_PROMPT_FILE" --model sonnet --timeout 60)
+    rm -f "$TRIAGE_PROMPT_FILE"
+    printf '%s\n' "$TRIAGE_OUT" | ptee
+    if printf '%s' "$TRIAGE_OUT" | grep -qiE 'route:[[:space:]]*spec'; then
+      TASK_ROUTE="spec"
+    fi
+    log "Triage route: $TASK_ROUTE"
+  fi
+
+  SPEC_BODY=$(factory_section "spec" "$SHIPYARD/factory.md")
+  if [ "$TASK_ROUTE" = "spec" ] && echo "$FACTORY_STAGES" | grep -q '^spec:prompt$' && [ -n "$SPEC_BODY" ]; then
+    stage "SPEC"
+    update_status "$TASK_NAME — writing spec"
+    SPEC_PROMPT_FILE=$(mktemp)
+    cat > "$SPEC_PROMPT_FILE" <<SPEC_EOF
+$SPEC_BODY
+
+--- TASK ---
+$TASK_PROMPT
+--- END TASK ---
+
+Repo: $REPO_NAME (branch $BRANCH). Write the filled template to spec.md in the repo root. Output only the spec — do not implement anything, do not run git.
+SPEC_EOF
+    run_agent "$SPEC_PROMPT_FILE" --model sonnet --timeout 120 | ptee
+    rm -f "$SPEC_PROMPT_FILE"
+    if [ -f "$REPO_DIR/spec.md" ]; then
+      SPEC_DOC=$(cat "$REPO_DIR/spec.md")
+      log "Spec written: $REPO_DIR/spec.md"
+      if [ "${SHIPYARD_APPROVE_SPEC:-0}" = "1" ]; then
+        stage "APPROVE"
+        log "Review $REPO_DIR/spec.md"
+        printf 'Approve spec and continue? [y/N] '
+        read -r _approve </dev/tty 2>/dev/null || _approve="y"
+        case "$_approve" in
+          y|Y|yes|YES) log "Spec approved" ;;
+          *) log "Spec rejected — aborting task"; cleanup; exit 0 ;;
+        esac
+      fi
+    else
+      log "No spec.md produced; proceeding without a spec"
+    fi
+  fi
+fi
+
 stage "CODE"
 update_status "$TASK_NAME — coding..."
 log "Ctrl+C to cancel. Monitor: tail -f $LOGFILE"
@@ -854,6 +1046,7 @@ BASE_BRANCH: $BASE_BRANCH
 --- TASK ---
 $TASK_PROMPT
 --- END TASK ---
+$([ -n "$SPEC_DOC" ] && printf '\n--- APPROVED SPEC (implement to this) ---\n%s\n--- END SPEC ---\n' "$SPEC_DOC")
 
 Log format rules (follow exactly):
 - Stage headers: ━━━ STAGE_NAME ━━━ (e.g. ━━━ CODE ━━━, ━━━ TEST ━━━)
@@ -902,37 +1095,7 @@ grep -q "FACTORY_RESULT:SUCCESS" "$LOGFILE" 2>/dev/null && HAS_SHIPPED=true
 # agent when unrecognized.
 stage "GATES"
 update_status "$TASK_NAME — checking gates"
-GATE_FAILURES=""
-GATE_CUSTOM=""
-
-while IFS= read -r line; do
-  raw=$(echo "$line" | sed -E 's/^[[:space:]]*-[[:space:]]*//' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
-  [ -z "$raw" ] && continue
-  case "$raw" in
-    \[*\]) continue ;;  # skip section header labels from factory_rules
-  esac
-
-  # Detect `!` strict prefix
-  strict=false
-  gate="$raw"
-  case "$raw" in
-    "!"*) strict=true; gate=$(echo "$raw" | sed -E 's/^![[:space:]]*//') ;;
-  esac
-
-  check_gate "$gate"
-  case "$?" in
-    0) if [ "$strict" = true ]; then log "PASS: ! $gate"; else log "PASS: $gate"; fi ;;
-    1) if [ "$strict" = true ]; then log "FAIL: ! $gate"; else log "FAIL: $gate"; fi
-       GATE_FAILURES="${GATE_FAILURES}\n- $gate" ;;
-    2) if [ "$strict" = true ]; then
-         log "FAIL: ! $gate (strict — framework has no check for this rule)"
-         GATE_FAILURES="${GATE_FAILURES}\n- $gate (strict: add a check_gate pattern or drop the !)"
-       else
-         log "FWD:  $gate"
-         GATE_CUSTOM="${GATE_CUSTOM}\n- $gate"
-       fi ;;
-  esac
-done < <(factory_rules "$SHIPYARD/factory.md")
+run_all_gates "$SHIPYARD/factory.md"
 
 GATE_FWD_COUNT=$(echo -e "$GATE_CUSTOM" | grep -c '^- ' || true)
 if [ -z "$GATE_FAILURES" ]; then
@@ -976,25 +1139,8 @@ FIX_EOF
     run_agent "$FIX_PROMPT_FILE" --model sonnet --timeout 120 | ptee
     rm -f "$FIX_PROMPT_FILE"
 
-    # Re-run gates
-    GATE_FAILURES=""
-    while IFS= read -r line; do
-      raw=$(echo "$line" | sed -E 's/^[[:space:]]*-[[:space:]]*//' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
-      [ -z "$raw" ] && continue
-      case "$raw" in \[*\]) continue ;; esac
-      strict=false
-      gate="$raw"
-      case "$raw" in
-        "!"*) strict=true; gate=$(echo "$raw" | sed -E 's/^![[:space:]]*//') ;;
-      esac
-      check_gate "$gate"
-      rc=$?
-      if [ "$rc" = "1" ]; then
-        GATE_FAILURES="${GATE_FAILURES}\n- $gate"
-      elif [ "$rc" = "2" ] && [ "$strict" = true ]; then
-        GATE_FAILURES="${GATE_FAILURES}\n- $gate (strict: framework has no check)"
-      fi
-    done < <(factory_rules "$SHIPYARD/factory.md")
+    # Re-run gates (stage-aware; resets accumulators)
+    run_all_gates "$SHIPYARD/factory.md"
 
     if [ -z "$GATE_FAILURES" ]; then
       log "All gate failures fixed"

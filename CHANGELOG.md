@@ -3,6 +3,7 @@
 0.34.0
   Stage-aware gates (factory.md v2)
   Read ## stages section
+  Triage and spec pre-code stages
   Dedupe rules across stages
 
 0.33.0

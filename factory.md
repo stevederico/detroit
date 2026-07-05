@@ -17,6 +17,19 @@ Rules prefixed with `!` are strict: the framework must verify them deterministic
 - ship: security, documentation
 - monitor: observability
 
+## triage
+Classify the task, then respond with exactly one line — `route: build` or `route: spec` — plus a one-sentence reason.
+- route: build — simple, unambiguous, single-file, no new dependency.
+- route: spec — new surface, more than one subsystem, schema/behavior change, or any new dependency.
+- When in doubt, route: spec.
+
+## spec
+Fill this template into spec.md; it is the plan the build stage implements.
+- Intent: what changes for the user, and the invariant that must hold after.
+- Out of scope: what this explicitly does not do.
+- Targets: files/functions to touch, with paths; any new dependency.
+- Acceptance: checks that prove it works — each a command or an observable behavior.
+
 ## style
 - camelCase functions, PascalCase components, UPPER_SNAKE_CASE constants
 - Booleans prefixed with `is`, `has`, or `should`

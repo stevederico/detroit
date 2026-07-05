@@ -933,6 +933,72 @@ if [ "$DRY_RUN" = true ]; then
 fi
 
 # ── CODE (TEST — agent session) ───────────────────────────
+# ── TRIAGE + SPEC (factory.md v2 pre-code prompt stages) ──
+# Run only when the factory declares them as `prompt` stages and provides a
+# `## triage` / `## spec` body. Unattended by default; SHIPYARD_APPROVE_SPEC=1
+# adds an interactive spec-approval gate. Threads the resulting spec into CODE.
+TASK_ROUTE="build"
+SPEC_DOC=""
+if [ "$DRY_RUN" = false ]; then
+  FACTORY_STAGES=$(factory_stages "$SHIPYARD/factory.md")
+  TRIAGE_BODY=$(factory_section "triage" "$SHIPYARD/factory.md")
+  if echo "$FACTORY_STAGES" | grep -q '^triage:prompt$' && [ -n "$TRIAGE_BODY" ]; then
+    stage "TRIAGE"
+    update_status "$TASK_NAME — triaging"
+    TRIAGE_PROMPT_FILE=$(mktemp)
+    cat > "$TRIAGE_PROMPT_FILE" <<TRIAGE_EOF
+$TRIAGE_BODY
+
+--- TASK ---
+$TASK_PROMPT
+--- END TASK ---
+
+Respond with exactly one line — "route: build" or "route: spec" — then a one-sentence reason. Do nothing else; do not touch the repo.
+TRIAGE_EOF
+    TRIAGE_OUT=$(run_agent "$TRIAGE_PROMPT_FILE" --model sonnet --timeout 60)
+    rm -f "$TRIAGE_PROMPT_FILE"
+    printf '%s\n' "$TRIAGE_OUT" | ptee
+    if printf '%s' "$TRIAGE_OUT" | grep -qiE 'route:[[:space:]]*spec'; then
+      TASK_ROUTE="spec"
+    fi
+    log "Triage route: $TASK_ROUTE"
+  fi
+
+  SPEC_BODY=$(factory_section "spec" "$SHIPYARD/factory.md")
+  if [ "$TASK_ROUTE" = "spec" ] && echo "$FACTORY_STAGES" | grep -q '^spec:prompt$' && [ -n "$SPEC_BODY" ]; then
+    stage "SPEC"
+    update_status "$TASK_NAME — writing spec"
+    SPEC_PROMPT_FILE=$(mktemp)
+    cat > "$SPEC_PROMPT_FILE" <<SPEC_EOF
+$SPEC_BODY
+
+--- TASK ---
+$TASK_PROMPT
+--- END TASK ---
+
+Repo: $REPO_NAME (branch $BRANCH). Write the filled template to spec.md in the repo root. Output only the spec — do not implement anything, do not run git.
+SPEC_EOF
+    run_agent "$SPEC_PROMPT_FILE" --model sonnet --timeout 120 | ptee
+    rm -f "$SPEC_PROMPT_FILE"
+    if [ -f "$REPO_DIR/spec.md" ]; then
+      SPEC_DOC=$(cat "$REPO_DIR/spec.md")
+      log "Spec written: $REPO_DIR/spec.md"
+      if [ "${SHIPYARD_APPROVE_SPEC:-0}" = "1" ]; then
+        stage "APPROVE"
+        log "Review $REPO_DIR/spec.md"
+        printf 'Approve spec and continue? [y/N] '
+        read -r _approve </dev/tty 2>/dev/null || _approve="y"
+        case "$_approve" in
+          y|Y|yes|YES) log "Spec approved" ;;
+          *) log "Spec rejected — aborting task"; cleanup; exit 0 ;;
+        esac
+      fi
+    else
+      log "No spec.md produced; proceeding without a spec"
+    fi
+  fi
+fi
+
 stage "CODE"
 update_status "$TASK_NAME — coding..."
 log "Ctrl+C to cancel. Monitor: tail -f $LOGFILE"
@@ -951,6 +1017,7 @@ BASE_BRANCH: $BASE_BRANCH
 --- TASK ---
 $TASK_PROMPT
 --- END TASK ---
+$([ -n "$SPEC_DOC" ] && printf '\n--- APPROVED SPEC (implement to this) ---\n%s\n--- END SPEC ---\n' "$SPEC_DOC")
 
 Log format rules (follow exactly):
 - Stage headers: ━━━ STAGE_NAME ━━━ (e.g. ━━━ CODE ━━━, ━━━ TEST ━━━)

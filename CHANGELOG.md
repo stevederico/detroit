@@ -1,5 +1,10 @@
 # Changelog
 
+0.41.0
+  Local web UI (web.py)
+  Monitor floor, create tasks, trigger runs
+  Browser plan approval (DETROIT_APPROVE_PLAN=web)
+
 0.40.0
   Rewrite README intro
   factory.md callout near top

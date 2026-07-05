@@ -60,6 +60,18 @@ tail -f logs/*.log
 
 Cancel anytime with `Ctrl+C` — Detroit cleans up the branch and returns to the default branch.
 
+## Web UI
+
+A local dashboard for the factory floor — the task queue, live agent status and stage, streaming logs, and shipped PRs — plus controls to create a task, trigger a run, and approve a plan at the gate.
+
+```bash
+python3 web.py        # http://127.0.0.1:4600  (DETROIT_UI_PORT to override)
+```
+
+Run it in a second terminal alongside the factory. Stdlib only — no dependencies, no build. It reads and writes the same files `factory.sh` uses, so there's no database to keep in sync.
+
+Local-only by design: it binds `127.0.0.1` and can start runs, so **don't expose it**. Runs triggered from the UI approve their plan in the browser (`DETROIT_APPROVE_PLAN=web`) — the agent pauses at the plan gate until you click Approve or Reject.
+
 ## Task Format
 
 Each task is a markdown file in `tasks/`. The filename becomes the task name. The file body is the full prompt sent to Claude — write as much or as little as you need.

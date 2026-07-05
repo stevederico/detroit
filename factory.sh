@@ -223,7 +223,7 @@ run_gate_bullets() {
 # run_all_gates <factory.md path>
 # Resets the gate accumulators, then gates every rule. If the factory declares a
 # v2 `## stages` section, gates run grouped by stage in declared order (prompt
-# stages like triage/spec are skipped here). Otherwise every section is gated in
+# stages like triage/plan are skipped here). Otherwise every section is gated in
 # one flat pass — identical to v1 behavior.
 run_all_gates() {
   local file="$1" stages sline sname sval
@@ -962,12 +962,12 @@ if [ "$DRY_RUN" = true ]; then
 fi
 
 # ── CODE (TEST — agent session) ───────────────────────────
-# ── TRIAGE + SPEC (factory.md v2 pre-code prompt stages) ──
+# ── TRIAGE + PLAN (factory.md v2 pre-code prompt stages) ──
 # Run only when the factory declares them as `prompt` stages and provides a
-# `## triage` / `## spec` body. Unattended by default; SHIPYARD_APPROVE_SPEC=1
-# adds an interactive spec-approval gate. Threads the resulting spec into CODE.
+# `## triage` / `## plan` body. Unattended by default; SHIPYARD_APPROVE_PLAN=1
+# adds an interactive plan-approval gate. Threads the resulting plan into CODE.
 TASK_ROUTE="build"
-SPEC_DOC=""
+PLAN_DOC=""
 if [ "$DRY_RUN" = false ]; then
   FACTORY_STAGES=$(factory_stages "$SHIPYARD/factory.md")
   TRIAGE_BODY=$(factory_section "triage" "$SHIPYARD/factory.md")
@@ -982,48 +982,48 @@ $TRIAGE_BODY
 $TASK_PROMPT
 --- END TASK ---
 
-Respond with exactly one line — "route: build" or "route: spec" — then a one-sentence reason. Do nothing else; do not touch the repo.
+Respond with exactly one line — "route: build" or "route: plan" — then a one-sentence reason. Do nothing else; do not touch the repo.
 TRIAGE_EOF
     TRIAGE_OUT=$(run_agent "$TRIAGE_PROMPT_FILE" --model sonnet --timeout 60)
     rm -f "$TRIAGE_PROMPT_FILE"
     printf '%s\n' "$TRIAGE_OUT" | ptee
-    if printf '%s' "$TRIAGE_OUT" | grep -qiE 'route:[[:space:]]*spec'; then
-      TASK_ROUTE="spec"
+    if printf '%s' "$TRIAGE_OUT" | grep -qiE 'route:[[:space:]]*plan'; then
+      TASK_ROUTE="plan"
     fi
     log "Triage route: $TASK_ROUTE"
   fi
 
-  SPEC_BODY=$(factory_section "spec" "$SHIPYARD/factory.md")
-  if [ "$TASK_ROUTE" = "spec" ] && echo "$FACTORY_STAGES" | grep -q '^spec:prompt$' && [ -n "$SPEC_BODY" ]; then
-    stage "SPEC"
-    update_status "$TASK_NAME — writing spec"
-    SPEC_PROMPT_FILE=$(mktemp)
-    cat > "$SPEC_PROMPT_FILE" <<SPEC_EOF
-$SPEC_BODY
+  PLAN_BODY=$(factory_section "plan" "$SHIPYARD/factory.md")
+  if [ "$TASK_ROUTE" = "plan" ] && echo "$FACTORY_STAGES" | grep -q '^plan:prompt$' && [ -n "$PLAN_BODY" ]; then
+    stage "PLAN"
+    update_status "$TASK_NAME — writing plan"
+    PLAN_PROMPT_FILE=$(mktemp)
+    cat > "$PLAN_PROMPT_FILE" <<PLAN_EOF
+$PLAN_BODY
 
 --- TASK ---
 $TASK_PROMPT
 --- END TASK ---
 
-Repo: $REPO_NAME (branch $BRANCH). Write the filled template to spec.md in the repo root. Output only the spec — do not implement anything, do not run git.
-SPEC_EOF
-    run_agent "$SPEC_PROMPT_FILE" --model sonnet --timeout 120 | ptee
-    rm -f "$SPEC_PROMPT_FILE"
-    if [ -f "$REPO_DIR/spec.md" ]; then
-      SPEC_DOC=$(cat "$REPO_DIR/spec.md")
-      log "Spec written: $REPO_DIR/spec.md"
-      if [ "${SHIPYARD_APPROVE_SPEC:-0}" = "1" ]; then
+Repo: $REPO_NAME (branch $BRANCH). Write the filled template to plan.md in the repo root. Output only the plan — do not implement anything, do not run git.
+PLAN_EOF
+    run_agent "$PLAN_PROMPT_FILE" --model sonnet --timeout 120 | ptee
+    rm -f "$PLAN_PROMPT_FILE"
+    if [ -f "$REPO_DIR/plan.md" ]; then
+      PLAN_DOC=$(cat "$REPO_DIR/plan.md")
+      log "Plan written: $REPO_DIR/plan.md"
+      if [ "${SHIPYARD_APPROVE_PLAN:-0}" = "1" ]; then
         stage "APPROVE"
-        log "Review $REPO_DIR/spec.md"
-        printf 'Approve spec and continue? [y/N] '
+        log "Review $REPO_DIR/plan.md"
+        printf 'Approve plan and continue? [y/N] '
         read -r _approve </dev/tty 2>/dev/null || _approve="y"
         case "$_approve" in
-          y|Y|yes|YES) log "Spec approved" ;;
-          *) log "Spec rejected — aborting task"; cleanup; exit 0 ;;
+          y|Y|yes|YES) log "Plan approved" ;;
+          *) log "Plan rejected — aborting task"; cleanup; exit 0 ;;
         esac
       fi
     else
-      log "No spec.md produced; proceeding without a spec"
+      log "No plan.md produced; proceeding without a plan"
     fi
   fi
 fi
@@ -1046,7 +1046,7 @@ BASE_BRANCH: $BASE_BRANCH
 --- TASK ---
 $TASK_PROMPT
 --- END TASK ---
-$([ -n "$SPEC_DOC" ] && printf '\n--- APPROVED SPEC (implement to this) ---\n%s\n--- END SPEC ---\n' "$SPEC_DOC")
+$([ -n "$PLAN_DOC" ] && printf '\n--- APPROVED PLAN (implement to this) ---\n%s\n--- END PLAN ---\n' "$PLAN_DOC")
 
 Log format rules (follow exactly):
 - Stage headers: ━━━ STAGE_NAME ━━━ (e.g. ━━━ CODE ━━━, ━━━ TEST ━━━)

@@ -1,5 +1,9 @@
 # Changelog
 
+0.35.0
+  Rename spec stage to plan
+  PLAN stage, plan.md, route: plan
+
 0.34.0
   Stage-aware gates (factory.md v2)
   Read ## stages section

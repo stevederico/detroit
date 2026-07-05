@@ -1,5 +1,9 @@
 # Changelog
 
+0.40.0
+  Rewrite README intro
+  factory.md callout near top
+
 0.39.0
   WebP-only banner
   Drop jpg fallback

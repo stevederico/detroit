@@ -1,6 +1,6 @@
 {
-  "name": "shipyard",
-  "version": "0.36.0",
+  "name": "detroit",
+  "version": "0.37.0",
   "description": "Autonomous code factory. Reads task files from tasks/, ships them as PRs.",
   "private": true
 }

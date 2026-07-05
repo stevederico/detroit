@@ -7,7 +7,7 @@ Gap 4 (environment isolation) — each factory run shares local machine state. G
 - `factory.sh --remote` triggers a workflow via `gh workflow run`
 - The action installs deps, runs `claude -p` (API key in GitHub Secrets)
 - Codes, tests, commits, opens PR — all inside a fresh VM
-- Shipyard locally dispatches and monitors
+- Detroit locally dispatches and monitors
 
 ## What you gain
 

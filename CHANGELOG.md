@@ -1,5 +1,10 @@
 # Changelog
 
+0.37.0
+  Rename project to detroit
+  DETROIT_* env vars (hard cut, no aliases)
+  Branch prefix and factory name updated
+
 0.36.0
   Rename check stage to test
   check: keyword and check_gate unchanged
@@ -52,7 +57,7 @@
 0.22.0
   Open source prep
   Add MIT LICENSE
-  Add Why Shipyard section
+  Add Why Detroit section
   Fix README accuracy
 0.21.0
   Parallel execution
@@ -92,4 +97,4 @@
   Project CLAUDE.md loading
   12-stage pipeline
   Factory prompt standards
-  Initial shipyard factory
+  Initial detroit factory

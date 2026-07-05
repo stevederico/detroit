@@ -1,19 +1,19 @@
 #!/bin/bash
-# factory.sh — shipyard code factory
+# factory.sh — detroit code factory
 # Reads next task file from tasks/, ships them as PRs.
 # Usage: bash factory.sh [--dry-run] [--issues owner/repo] [--parallel N] [--verify owner/repo]
 
-SHIPYARD="${SHIPYARD_DIR:-$(cd "$(dirname "$0")" && pwd)}"
-TASK_DIR="$SHIPYARD/tasks"
+DETROIT="${DETROIT_DIR:-$(cd "$(dirname "$0")" && pwd)}"
+TASK_DIR="$DETROIT/tasks"
 DONE_DIR="$TASK_DIR/done"
 LOCK_DIR="$TASK_DIR/.locks"
-PROJECTS="${SHIPYARD_PROJECTS:-$(dirname "$SHIPYARD")}"
-LOGDIR="$SHIPYARD/logs"
+PROJECTS="${DETROIT_PROJECTS:-$(dirname "$DETROIT")}"
+LOGDIR="$DETROIT/logs"
 TIMESTAMP=$(date +"%Y%m%d-%H%M%S")
 
-STATUS_DIR="$SHIPYARD/.status"
+STATUS_DIR="$DETROIT/.status"
 mkdir -p "$LOGDIR" "$DONE_DIR" "$LOCK_DIR" "$STATUS_DIR"
-AGENT_ID="${SHIPYARD_AGENT_ID:-0}"
+AGENT_ID="${DETROIT_AGENT_ID:-0}"
 LOGFILE="$LOGDIR/$TIMESTAMP-w$AGENT_ID.log"
 WORKTREE_DIR=""
 # Force headless browser for all agent-browser calls
@@ -245,10 +245,10 @@ run_all_gates() {
 }
 
 # ── Agent configuration ───────────────────────────────────
-# SHIPYARD_AGENT: claude (default), dotbot, grok
-# SHIPYARD_PROVIDER: xai (default) — provider for dotbot (xai, anthropic, openai, ollama)
-# SHIPYARD_MODEL: model override for dotbot and grok (grok needs XAI_API_KEY set)
-SHIPYARD_CLI="${SHIPYARD_AGENT:-claude}"
+# DETROIT_AGENT: claude (default), dotbot, grok
+# DETROIT_PROVIDER: xai (default) — provider for dotbot (xai, anthropic, openai, ollama)
+# DETROIT_MODEL: model override for dotbot and grok (grok needs XAI_API_KEY set)
+DETROIT_CLI="${DETROIT_AGENT:-claude}"
 
 # run_agent <prompt_file> [--model <model>] [--timeout <secs>] [--timeout-msg <msg>] [--verbose]
 # Runs the configured agent CLI and streams parsed output to stdout.
@@ -269,7 +269,7 @@ run_agent() {
   local prompt
   prompt=$(cat "$prompt_file")
 
-  case "$SHIPYARD_CLI" in
+  case "$DETROIT_CLI" in
     claude)
       local -a args=(-p "$prompt" --dangerously-skip-permissions --output-format stream-json)
       [ -n "$model" ] && args+=(--model "$model")
@@ -314,8 +314,8 @@ for line in sys.stdin:
 "
       ;;
     dotbot)
-      local -a args=(--provider "${SHIPYARD_PROVIDER:-xai}")
-      [ -n "${SHIPYARD_MODEL:-}" ] && args+=(--model "$SHIPYARD_MODEL")
+      local -a args=(--provider "${DETROIT_PROVIDER:-xai}")
+      [ -n "${DETROIT_MODEL:-}" ] && args+=(--model "$DETROIT_MODEL")
 
       if [ "$timeout_secs" -gt 0 ] 2>/dev/null; then
         dotbot "$prompt" "${args[@]}" 2>/dev/null | \
@@ -332,10 +332,10 @@ for line in sys.stdin:
       ;;
     grok)
       # Official xAI Grok CLI (`grok`). Needs XAI_API_KEY. Like dotbot, ignores
-      # the caller's --model alias (claude-specific) and honors SHIPYARD_MODEL.
+      # the caller's --model alias (claude-specific) and honors DETROIT_MODEL.
       # Docs: https://docs.x.ai/build/cli/headless-scripting
       local -a args=(--no-auto-update -p "$prompt" --output-format streaming-json)
-      [ -n "${SHIPYARD_MODEL:-}" ] && args+=(--model "$SHIPYARD_MODEL")
+      [ -n "${DETROIT_MODEL:-}" ] && args+=(--model "$DETROIT_MODEL")
 
       grok "${args[@]}" 2>/dev/null | \
         python3 -uc "
@@ -360,7 +360,7 @@ print('', flush=True)
 "
       ;;
     *)
-      log "Unknown agent: $SHIPYARD_CLI"
+      log "Unknown agent: $DETROIT_CLI"
       return 1
       ;;
   esac
@@ -376,7 +376,7 @@ cleanup() {
   fi
   # Clean up worktree
   if [ -n "$WORKTREE_DIR" ] && [ -d "$WORKTREE_DIR" ]; then
-    cd "$SHIPYARD"
+    cd "$DETROIT"
     rm -rf "$WORKTREE_DIR" 2>/dev/null
     git -C "$(dirname "$WORKTREE_DIR")" worktree prune 2>/dev/null
     log "Cleaned up worktree"
@@ -390,12 +390,12 @@ if [ "$1" = "--parallel" ]; then
   AGENTS="${2:-3}"
   rm -f "$STATUS_DIR"/agent-* 2>/dev/null
 
-  echo "━━━ SHIPYARD: $AGENTS parallel agents ━━━"
+  echo "━━━ DETROIT: $AGENTS parallel agents ━━━"
   echo ""
 
   PIDS=""
   for i in $(seq 1 "$AGENTS"); do
-    SHIPYARD_AGENT_ID="$i" bash "$0" &
+    DETROIT_AGENT_ID="$i" bash "$0" &
     PIDS="$PIDS $!"
     sleep 1
   done
@@ -612,15 +612,15 @@ if routes:
     TEST_AUTH=""
     SIGNUP_RESULT=$(curl -s -X POST "$BACKEND_URL/api/signup" \
       -H "Content-Type: application/json" \
-      -d '{"name":"Test User","email":"test@shipyard.dev","password":"shipyard123"}' 2>/dev/null)
+      -d '{"name":"Test User","email":"test@detroit.dev","password":"detroit123"}' 2>/dev/null)
     if echo "$SIGNUP_RESULT" | python3 -c "import sys,json; json.load(sys.stdin)['token']" 2>/dev/null; then
-      TEST_AUTH="Test account created (test@shipyard.dev / shipyard123)"
+      TEST_AUTH="Test account created (test@detroit.dev / detroit123)"
     else
       SIGNIN_RESULT=$(curl -s -X POST "$BACKEND_URL/api/signin" \
         -H "Content-Type: application/json" \
-        -d '{"email":"test@shipyard.dev","password":"shipyard123"}' 2>/dev/null)
+        -d '{"email":"test@detroit.dev","password":"detroit123"}' 2>/dev/null)
       if echo "$SIGNIN_RESULT" | python3 -c "import sys,json; json.load(sys.stdin)['token']" 2>/dev/null; then
-        TEST_AUTH="Test account exists (test@shipyard.dev / shipyard123)"
+        TEST_AUTH="Test account exists (test@detroit.dev / detroit123)"
       fi
     fi
 
@@ -639,7 +639,7 @@ Steps:
 1. Go directly to: agent-browser open $TARGET_URL
 2. Wait: agent-browser wait --load networkidle
 3. Snapshot: agent-browser snapshot -i
-   If login page: sign in with test@shipyard.dev / shipyard123, then go to $TARGET_URL
+   If login page: sign in with test@detroit.dev / detroit123, then go to $TARGET_URL
 4. Take a screenshot: agent-browser screenshot $SCREENSHOT_DIR/description.png
    You MUST take at least one screenshot.
 5. Print VERIFY_DONE"
@@ -708,11 +708,11 @@ if [ "$1" = "--issues" ]; then
     exit 1
   fi
 
-  log "Syncing issues from $REPO (label: shipyard)"
+  log "Syncing issues from $REPO (label: detroit)"
   export PROJECT_NAME=$(echo "$REPO" | cut -d/ -f2)
   export REPO TASK_DIR
 
-  gh issue list --repo "$REPO" --label "shipyard" --state open --json number,title,body --limit 50 2>/dev/null | \
+  gh issue list --repo "$REPO" --label "detroit" --state open --json number,title,body --limit 50 2>/dev/null | \
     python3 -c "
 import json, sys, re, os
 
@@ -734,7 +734,7 @@ for issue in issues:
     print(f'  Created {filename}')
 
 if not issues:
-    print('  No issues with label \"shipyard\" found')
+    print('  No issues with label \"detroit\" found')
 "
   exit 0
 fi
@@ -861,7 +861,7 @@ else
   log "New repo — skipping pull"
 fi
 
-BRANCH="shipyard/$TASK_NAME"
+BRANCH="detroit/$TASK_NAME"
 if [ "$IS_NEW_REPO" = false ] && [ "$DRY_RUN" = false ]; then
   git branch -D "$BRANCH" 2>/dev/null
   # Use worktree for isolation (parallel-safe)
@@ -953,7 +953,7 @@ if [ "$DRY_RUN" = true ]; then
   log "Branch:     $BRANCH"
   log "Base:       $BASE_BRANCH"
   log "Verify:     $(command -v agent-browser &>/dev/null && echo 'agent-browser available' || echo 'agent-browser not installed — skip')"
-  log "Factory:    $SHIPYARD/factory.md"
+  log "Factory:    $DETROIT/factory.md"
   log ""
   log "━━━ PROMPT ━━━"
   echo "$TASK_PROMPT" | ptee
@@ -964,13 +964,13 @@ fi
 # ── CODE (TEST — agent session) ───────────────────────────
 # ── TRIAGE + PLAN (factory.md v2 pre-code prompt stages) ──
 # Run only when the factory declares them as `prompt` stages and provides a
-# `## triage` / `## plan` body. Unattended by default; SHIPYARD_APPROVE_PLAN=1
+# `## triage` / `## plan` body. Unattended by default; DETROIT_APPROVE_PLAN=1
 # adds an interactive plan-approval gate. Threads the resulting plan into CODE.
 TASK_ROUTE="build"
 PLAN_DOC=""
 if [ "$DRY_RUN" = false ]; then
-  FACTORY_STAGES=$(factory_stages "$SHIPYARD/factory.md")
-  TRIAGE_BODY=$(factory_section "triage" "$SHIPYARD/factory.md")
+  FACTORY_STAGES=$(factory_stages "$DETROIT/factory.md")
+  TRIAGE_BODY=$(factory_section "triage" "$DETROIT/factory.md")
   if echo "$FACTORY_STAGES" | grep -q '^triage:prompt$' && [ -n "$TRIAGE_BODY" ]; then
     stage "TRIAGE"
     update_status "$TASK_NAME — triaging"
@@ -993,7 +993,7 @@ TRIAGE_EOF
     log "Triage route: $TASK_ROUTE"
   fi
 
-  PLAN_BODY=$(factory_section "plan" "$SHIPYARD/factory.md")
+  PLAN_BODY=$(factory_section "plan" "$DETROIT/factory.md")
   if [ "$TASK_ROUTE" = "plan" ] && echo "$FACTORY_STAGES" | grep -q '^plan:prompt$' && [ -n "$PLAN_BODY" ]; then
     stage "PLAN"
     update_status "$TASK_NAME — writing plan"
@@ -1012,7 +1012,7 @@ PLAN_EOF
     if [ -f "$REPO_DIR/plan.md" ]; then
       PLAN_DOC=$(cat "$REPO_DIR/plan.md")
       log "Plan written: $REPO_DIR/plan.md"
-      if [ "${SHIPYARD_APPROVE_PLAN:-0}" = "1" ]; then
+      if [ "${DETROIT_APPROVE_PLAN:-0}" = "1" ]; then
         stage "APPROVE"
         log "Review $REPO_DIR/plan.md"
         printf 'Approve plan and continue? [y/N] '
@@ -1036,7 +1036,7 @@ CODE_START=$(date +%s)
 # Write prompt to temp file to avoid quoting issues with script
 PROMPT_FILE=$(mktemp)
 cat > "$PROMPT_FILE" <<PROMPT_EOF
-You are running in shipyard mode. Complete this task autonomously.
+You are running in detroit mode. Complete this task autonomously.
 
 REPO: $REPO_NAME
 NEW_REPO: $IS_NEW_REPO
@@ -1054,7 +1054,7 @@ Log format rules (follow exactly):
 - Results: plain text summary of what changed
 
 Factory rules (every bullet is mandatory — grouped by the 8 factory.md sections):
-$(factory_rules "$SHIPYARD/factory.md")
+$(factory_rules "$DETROIT/factory.md")
 
 Pipeline (execute in order):
 1. If NEW_REPO is true, scaffold the repo from scratch (README, package.json, etc.)
@@ -1095,7 +1095,7 @@ grep -q "FACTORY_RESULT:SUCCESS" "$LOGFILE" 2>/dev/null && HAS_SHIPPED=true
 # agent when unrecognized.
 stage "GATES"
 update_status "$TASK_NAME — checking gates"
-run_all_gates "$SHIPYARD/factory.md"
+run_all_gates "$DETROIT/factory.md"
 
 GATE_FWD_COUNT=$(echo -e "$GATE_CUSTOM" | grep -c '^- ' || true)
 if [ -z "$GATE_FAILURES" ]; then
@@ -1117,7 +1117,7 @@ if [ -n "$GATE_FAILURES" ] && [ "$HAS_SHIPPED" = true ]; then
 
     FIX_PROMPT_FILE=$(mktemp)
     cat > "$FIX_PROMPT_FILE" <<FIX_EOF
-You are fixing factory gate failures in a shipyard run. Fix these issues and commit.
+You are fixing factory gate failures in a detroit run. Fix these issues and commit.
 
 PROJECT: $REPO_NAME
 BRANCH: $BRANCH
@@ -1140,7 +1140,7 @@ FIX_EOF
     rm -f "$FIX_PROMPT_FILE"
 
     # Re-run gates (stage-aware; resets accumulators)
-    run_all_gates "$SHIPYARD/factory.md"
+    run_all_gates "$DETROIT/factory.md"
 
     if [ -z "$GATE_FAILURES" ]; then
       log "All gate failures fixed"
@@ -1388,17 +1388,17 @@ if routes:
       BACKEND_URL=$(echo "$DEV_URL" | sed 's/:5173/:8000/' | sed 's/:5174/:8000/')
       SIGNUP_RESULT=$(curl -s -X POST "$BACKEND_URL/api/signup" \
         -H "Content-Type: application/json" \
-        -d '{"name":"Test User","email":"test@shipyard.dev","password":"shipyard123"}' 2>/dev/null)
+        -d '{"name":"Test User","email":"test@detroit.dev","password":"detroit123"}' 2>/dev/null)
       if echo "$SIGNUP_RESULT" | python3 -c "import sys,json; json.load(sys.stdin)['token']" 2>/dev/null; then
-        TEST_AUTH="Test account created (test@shipyard.dev / shipyard123)"
+        TEST_AUTH="Test account created (test@detroit.dev / detroit123)"
         log "Test account pre-created"
       else
         # Try signin in case account exists
         SIGNIN_RESULT=$(curl -s -X POST "$BACKEND_URL/api/signin" \
           -H "Content-Type: application/json" \
-          -d '{"email":"test@shipyard.dev","password":"shipyard123"}' 2>/dev/null)
+          -d '{"email":"test@detroit.dev","password":"detroit123"}' 2>/dev/null)
         if echo "$SIGNIN_RESULT" | python3 -c "import sys,json; json.load(sys.stdin)['token']" 2>/dev/null; then
-          TEST_AUTH="Test account exists (test@shipyard.dev / shipyard123)"
+          TEST_AUTH="Test account exists (test@detroit.dev / detroit123)"
           log "Test account already exists"
         fi
       fi
@@ -1425,7 +1425,7 @@ Steps:
 1. Go directly to the target: agent-browser open $TARGET_URL
 2. Wait for load: agent-browser wait --load networkidle
 3. Snapshot: agent-browser snapshot -i
-   - If login page: sign in with test@shipyard.dev / shipyard123, then go to $TARGET_URL again
+   - If login page: sign in with test@detroit.dev / detroit123, then go to $TARGET_URL again
 4. Take a screenshot: agent-browser screenshot $SCREENSHOT_DIR/description.png
    - You MUST take at least one screenshot. This is not optional.
 5. Compare the snapshot against task requirements
@@ -1576,7 +1576,7 @@ fi
 # Clean up worktree and lock
 if [ -n "$WORKTREE_DIR" ] && [ -d "$WORKTREE_DIR" ]; then
   ORIG_REPO=$(dirname "$WORKTREE_DIR")/..
-  cd "$SHIPYARD"
+  cd "$DETROIT"
   rm -rf "$WORKTREE_DIR" 2>/dev/null
   git -C "$(cd "$ORIG_REPO" && pwd)" worktree prune 2>/dev/null
 fi

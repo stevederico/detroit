@@ -1,11 +1,11 @@
 <p align="center">
   <picture>
     <source srcset="headline.webp" type="image/webp">
-    <img src="headline.jpg" alt="Shipyard" width="750" height="500">
+    <img src="headline.jpg" alt="Detroit" width="750" height="500">
   </picture>
 </p>
 
-# Shipyard
+# Detroit
 
 Autonomous code factory. Issues go in, PRs come out.
 
@@ -18,21 +18,21 @@ Autonomous code factory. Issues go in, PRs come out.
 
 ## Setup
 
-Shipyard expects your repos to live in the parent directory:
+Detroit expects your repos to live in the parent directory:
 
 ```
 projects/
-  shipyard/        # this repo
-  my-app/          # a repo shipyard can work on
+  detroit/        # this repo
+  my-app/          # a repo detroit can work on
   another-app/     # another repo
 ```
 
-If a repo isn't local, Shipyard searches your GitHub account and clones it automatically.
+If a repo isn't local, Detroit searches your GitHub account and clones it automatically.
 
-Or set `SHIPYARD_PROJECTS` to point elsewhere:
+Or set `DETROIT_PROJECTS` to point elsewhere:
 
 ```bash
-export SHIPYARD_PROJECTS="$HOME/code"
+export DETROIT_PROJECTS="$HOME/code"
 ```
 
 ## Usage
@@ -45,9 +45,9 @@ export SHIPYARD_PROJECTS="$HOME/code"
 ./factory.sh --verify owner/repo          # re-verify all open PRs
 ./factory.sh --verify owner/repo 42       # re-verify a specific PR
 
-SHIPYARD_AGENT=dotbot ./factory.sh        # use dotbot instead of Claude
-SHIPYARD_AGENT=dotbot SHIPYARD_PROVIDER=anthropic ./factory.sh  # dotbot + Anthropic
-SHIPYARD_AGENT=grok ./factory.sh          # use the xAI Grok CLI (needs XAI_API_KEY)
+DETROIT_AGENT=dotbot ./factory.sh        # use dotbot instead of Claude
+DETROIT_AGENT=dotbot DETROIT_PROVIDER=anthropic ./factory.sh  # dotbot + Anthropic
+DETROIT_AGENT=grok ./factory.sh          # use the xAI Grok CLI (needs XAI_API_KEY)
 ```
 
 Run in its own terminal — not inside another tool. Monitor progress in a second terminal:
@@ -56,7 +56,7 @@ Run in its own terminal — not inside another tool. Monitor progress in a secon
 tail -f logs/*.log
 ```
 
-Cancel anytime with `Ctrl+C` — Shipyard cleans up the branch and returns to the default branch.
+Cancel anytime with `Ctrl+C` — Detroit cleans up the branch and returns to the default branch.
 
 ## Task Format
 
@@ -73,9 +73,9 @@ Add a dark mode toggle to the settings page. Should respect system
 preference by default. Use the existing ThemeProvider context.
 ```
 
-**Screenshot verification** — if `agent-browser` is installed and the project has a `dev`/`start`/`preview` script, Shipyard starts the dev server after shipping, reads the git diff to figure out which pages were affected, and uses Claude + agent-browser to take targeted screenshots of the changes. Screenshots are committed to the branch and commented on the PR.
+**Screenshot verification** — if `agent-browser` is installed and the project has a `dev`/`start`/`preview` script, Detroit starts the dev server after shipping, reads the git diff to figure out which pages were affected, and uses Claude + agent-browser to take targeted screenshots of the changes. Screenshots are committed to the branch and commented on the PR.
 
-**New repo** — omit `repo:` and Shipyard creates one (named from the filename):
+**New repo** — omit `repo:` and Detroit creates one (named from the filename):
 
 ```markdown
 Build a weather dashboard that shows 5-day forecast.
@@ -101,31 +101,31 @@ Pull issues from any repo into your task queue:
 ./factory.sh --issues owner/repo
 ```
 
-This fetches open issues labeled `shipyard` and creates task files from them. After the factory completes a task, it comments the PR link on the issue and closes it.
+This fetches open issues labeled `detroit` and creates task files from them. After the factory completes a task, it comments the PR link on the issue and closes it.
 
 ## Schedule
 
-Shipyard is designed to run unattended. Point cron at it and your issues get solved while you sleep.
+Detroit is designed to run unattended. Point cron at it and your issues get solved while you sleep.
 
 **Every hour** — process one task from the queue:
 
 ```bash
-0 * * * * /path/to/shipyard/factory.sh >> /path/to/shipyard/shipyard.log 2>&1
+0 * * * * /path/to/detroit/factory.sh >> /path/to/detroit/detroit.log 2>&1
 ```
 
 **Every hour** — pull new GitHub issues, then process them:
 
 ```bash
-0 * * * * /path/to/shipyard/factory.sh --issues owner/repo >> /path/to/shipyard/shipyard.log 2>&1
+0 * * * * /path/to/detroit/factory.sh --issues owner/repo >> /path/to/detroit/detroit.log 2>&1
 ```
 
 **Nightly batch** — run 5 tasks in parallel at 2am:
 
 ```bash
-0 2 * * * /path/to/shipyard/factory.sh --parallel 5 >> /path/to/shipyard/shipyard.log 2>&1
+0 2 * * * /path/to/detroit/factory.sh --parallel 5 >> /path/to/detroit/detroit.log 2>&1
 ```
 
-Label a GitHub issue `shipyard`, go to bed, wake up to a PR with screenshots. That's the workflow.
+Label a GitHub issue `detroit`, go to bed, wake up to a PR with screenshots. That's the workflow.
 
 ## Factory Features
 
@@ -176,11 +176,11 @@ Prefix a bullet with `!` to mark it **strict** — the framework must verify it 
 - Dependency audit clean
 ```
 
-Edit any section to match your preferences. `factory.md` is framework-agnostic — the same file can drive any autonomous agent pipeline, not just Shipyard.
+Edit any section to match your preferences. `factory.md` is framework-agnostic — the same file can drive any autonomous agent pipeline, not just Detroit.
 
 ## Pipeline
 
-Shipyard's pipeline is an implementation detail of `factory.sh`:
+Detroit's pipeline is an implementation detail of `factory.sh`:
 
 1. Pick the next task from `tasks/`
 2. Route it to a repo (local, GitHub, or new)
@@ -199,11 +199,11 @@ Shipyard's pipeline is an implementation detail of `factory.sh`:
 - `gh` CLI (authenticated)
 - `agent-browser` (optional, for screenshot verification)
 
-## Why Shipyard
+## Why Detroit
 
-Shipyard does the same thing as GitHub Copilot Coding Agent and Claude for GitHub — task in, PR out, automated. The difference is it's a shell script you own.
+Detroit does the same thing as GitHub Copilot Coding Agent and Claude for GitHub — task in, PR out, automated. The difference is it's a shell script you own.
 
-### What Shipyard has that they don't
+### What Detroit has that they don't
 
 - **Task queue with priority** — file-based, numbered for order, not one-off prompts
 - **Configurable standards and workflow** — edit `factory.md` (a portable, framework-agnostic spec) to control exactly what the agent does
@@ -213,21 +213,21 @@ Shipyard does the same thing as GitHub Copilot Coding Agent and Claude for GitHu
 - **GitHub issues integration** — pull labeled issues into the queue, close them on completion
 - **No vendor lock-in** — swap Claude for another model, change the pipeline, fork it
 
-### What they have that Shipyard doesn't
+### What they have that Detroit doesn't
 
 - Hosted infrastructure (no local machine needed)
 - Web UI
 - No setup
 
-### Who is Shipyard for
+### Who is Detroit for
 
 Developers who want to own their code factory. Same idea as self-hosting vs SaaS — you trade convenience for control.
 
 ## Contributing
 
 ```bash
-git clone https://github.com/stevederico/shipyard
-cd shipyard
+git clone https://github.com/stevederico/detroit
+cd detroit
 ```
 
 Edit `factory.sh` or `factory.md`. Open a PR.

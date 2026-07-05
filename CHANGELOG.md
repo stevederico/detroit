@@ -1,7 +1,7 @@
 # Changelog
 
 0.41.0
-  Local web UI (web.py)
+  Local web UI (web.rs, std-only Rust)
   Monitor floor, create tasks, trigger runs
   Browser plan approval (DETROIT_APPROVE_PLAN=web)
 

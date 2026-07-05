@@ -65,10 +65,11 @@ Cancel anytime with `Ctrl+C` — Detroit cleans up the branch and returns to the
 A local dashboard for the factory floor — the task queue, live agent status and stage, streaming logs, and shipped PRs — plus controls to create a task, trigger a run, and approve a plan at the gate.
 
 ```bash
-python3 web.py        # http://127.0.0.1:4600  (DETROIT_UI_PORT to override)
+rustc -O web.rs -o detroit-web    # one-time build (needs Rust)
+./detroit-web                     # http://127.0.0.1:4600  (DETROIT_UI_PORT to override)
 ```
 
-Run it in a second terminal alongside the factory. Stdlib only — no dependencies, no build. It reads and writes the same files `factory.sh` uses, so there's no database to keep in sync.
+Run it in a second terminal alongside the factory. Std-only Rust — no crates, one `rustc` build, no database. It reads and writes the same files `factory.sh` uses.
 
 Local-only by design: it binds `127.0.0.1` and can start runs, so **don't expose it**. Runs triggered from the UI approve their plan in the browser (`DETROIT_APPROVE_PLAN=web`) — the agent pauses at the plan gate until you click Approve or Reject.
 
@@ -212,6 +213,7 @@ Detroit's pipeline is an implementation detail of `factory.sh`:
 - [Claude Code](https://claude.ai/claude-code), [dotbot](https://github.com/stevederico/dotbot), or the [Grok CLI](https://docs.x.ai/build/cli) (needs `XAI_API_KEY`)
 - `gh` CLI (authenticated)
 - `agent-browser` (optional, for screenshot verification)
+- Rust (optional, only to build the web UI)
 
 ## Why Detroit
 

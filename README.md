@@ -4,7 +4,12 @@
 
 # Detroit
 
-Autonomous code factory. Issues go in, PRs come out.
+### an autonomous code factory — tasks in, pull requests out
+
+Drop a markdown task in `tasks/`, and Detroit drives a coding agent through the whole pipeline — **triage → plan → build → test → ship** — running your tests and opening a PR with screenshots. It's a shell script you own, not a hosted black box, and it runs on Claude, Grok, or dotbot.
+
+> [!TIP]
+> **One [`factory.md`](https://github.com/stevederico/factory-md) runs the whole line.** A single file at your repo root declares the pipeline and the standards every change must meet — style, build, testing, security — in named sections. Edit it to control exactly what the agent does. Clone a factory, run it anywhere.
 
 ## How It Works
 

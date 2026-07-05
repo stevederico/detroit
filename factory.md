@@ -11,20 +11,20 @@ Rules prefixed with `!` are strict: the framework must verify them deterministic
 
 ## stages
 - triage: prompt
-- spec: prompt
+- plan: prompt
 - build: style, build, environment
 - check: testing, quality, documentation, security
 - ship: security, documentation
 - monitor: observability
 
 ## triage
-Classify the task, then respond with exactly one line — `route: build` or `route: spec` — plus a one-sentence reason.
+Classify the task, then respond with exactly one line — `route: build` or `route: plan` — plus a one-sentence reason.
 - route: build — simple, unambiguous, single-file, no new dependency.
-- route: spec — new surface, more than one subsystem, schema/behavior change, or any new dependency.
-- When in doubt, route: spec.
+- route: plan — new surface, more than one subsystem, schema/behavior change, or any new dependency.
+- When in doubt, route: plan.
 
-## spec
-Fill this template into spec.md; it is the plan the build stage implements.
+## plan
+Fill this template into plan.md; it is the plan the build stage implements.
 - Intent: what changes for the user, and the invariant that must hold after.
 - Out of scope: what this explicitly does not do.
 - Targets: files/functions to touch, with paths; any new dependency.

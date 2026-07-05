@@ -1,5 +1,8 @@
 # Changelog
 
+0.38.0
+  New banner image
+
 0.37.0
   Rename project to detroit
   DETROIT_* env vars (hard cut, no aliases)

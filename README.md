@@ -1,8 +1,5 @@
 <p align="center">
-  <picture>
-    <source srcset="headline.webp" type="image/webp">
-    <img src="headline.jpg" alt="Detroit" width="750" height="500">
-  </picture>
+  <img src="headline.webp" alt="Detroit" width="750" height="500">
 </p>
 
 # Detroit

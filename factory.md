@@ -13,7 +13,7 @@ Rules prefixed with `!` are strict: the framework must verify them deterministic
 - triage: prompt
 - plan: prompt
 - build: style, build, environment
-- check: testing, quality, documentation, security
+- test: testing, quality, documentation, security
 - ship: security, documentation
 - monitor: observability
 

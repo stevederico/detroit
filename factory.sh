@@ -198,7 +198,7 @@ run_gate_bullets() {
       "!"*) strict=true; gate=$(echo "$raw" | sed -E 's/^![[:space:]]*//') ;;
     esac
     # Dedupe: a category may be declared in more than one stage (e.g. security in
-    # check and ship). Checks are deterministic with no state change between stage
+    # test and ship). Checks are deterministic with no state change between stage
     # groups, so gate each unique rule once. (Pure-bash membership; bash 3.2-safe.)
     case $'\n'"$GATE_SEEN"$'\n' in
       *$'\n'"$gate"$'\n'*) continue ;;

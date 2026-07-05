@@ -1,6 +1,6 @@
 # Scheduling via dotbot
 
-Shipyard needs a daemon mode (`--watch`) to auto-process new task files. dotbot already has a cron-like job scheduler (`schedule_job`, `list_jobs`, `toggle_job`, `cancel_job`) that fires prompts through the agent loop on recurring intervals.
+Detroit needs a daemon mode (`--watch`) to auto-process new task files. dotbot already has a cron-like job scheduler (`schedule_job`, `list_jobs`, `toggle_job`, `cancel_job`) that fires prompts through the agent loop on recurring intervals.
 
 ## How dotbot scheduling works
 
@@ -21,20 +21,20 @@ Add a `run_command` tool (~30 lines) to dotbot that does `execFile("bash", ["-c"
 
 Pros:
 - Smallest change (~30 lines in dotbot)
-- Shipyard gets daemon mode for free via dotbot's existing scheduler
+- Detroit gets daemon mode for free via dotbot's existing scheduler
 - No fswatch, no custom polling, no crontab
 - Job management via `dotbot jobs` CLI
 
 Cons:
 - Adds a shell execution tool to dotbot (security surface)
-- Couples shipyard scheduling to dotbot being installed
+- Couples detroit scheduling to dotbot being installed
 
-### 2. Make shipyard a dotbot tool
+### 2. Make detroit a dotbot tool
 
-Register a `shipyard_run` tool in dotbot that triggers the factory pipeline. Usage: `dotbot "Schedule a job every hour to run shipyard"`.
+Register a `detroit_run` tool in dotbot that triggers the factory pipeline. Usage: `dotbot "Schedule a job every hour to run detroit"`.
 
 Pros:
-- Clean separation — dotbot knows about shipyard as a first-class tool
+- Clean separation — dotbot knows about detroit as a first-class tool
 - Can pass context (which task, which repo) through the tool interface
 - dotbot's scheduler, notifications, and audit trail all work automatically
 
@@ -58,4 +58,4 @@ Cons:
 
 ## Recommendation
 
-Option 1 is the pragmatic choice. One small tool in dotbot, and shipyard gets scheduling without building anything new. Option 2 is worth revisiting if dotbot becomes the primary way people interact with shipyard. Option 3 is premature — factory.sh works, no reason to rewrite it.
+Option 1 is the pragmatic choice. One small tool in dotbot, and detroit gets scheduling without building anything new. Option 2 is worth revisiting if dotbot becomes the primary way people interact with detroit. Option 3 is premature — factory.sh works, no reason to rewrite it.

@@ -245,9 +245,9 @@ run_all_gates() {
 }
 
 # ── Agent configuration ───────────────────────────────────
-# SHIPYARD_AGENT: claude (default), dotbot
+# SHIPYARD_AGENT: claude (default), dotbot, grok
 # SHIPYARD_PROVIDER: xai (default) — provider for dotbot (xai, anthropic, openai, ollama)
-# SHIPYARD_MODEL: model override for dotbot
+# SHIPYARD_MODEL: model override for dotbot and grok (grok needs XAI_API_KEY set)
 SHIPYARD_CLI="${SHIPYARD_AGENT:-claude}"
 
 # run_agent <prompt_file> [--model <model>] [--timeout <secs>] [--timeout-msg <msg>] [--verbose]
@@ -329,6 +329,35 @@ for line in sys.stdin:
       else
         dotbot "$prompt" "${args[@]}" 2>/dev/null
       fi
+      ;;
+    grok)
+      # Official xAI Grok CLI (`grok`). Needs XAI_API_KEY. Like dotbot, ignores
+      # the caller's --model alias (claude-specific) and honors SHIPYARD_MODEL.
+      # Docs: https://docs.x.ai/build/cli/headless-scripting
+      local -a args=(--no-auto-update -p "$prompt" --output-format streaming-json)
+      [ -n "${SHIPYARD_MODEL:-}" ] && args+=(--model "$SHIPYARD_MODEL")
+
+      grok "${args[@]}" 2>/dev/null | \
+        python3 -uc "
+import sys, json, signal
+timeout = $timeout_secs
+tmsg = '''$timeout_msg'''
+if timeout > 0:
+    signal.alarm(timeout)
+    signal.signal(signal.SIGALRM, lambda *_: (print(tmsg, flush=True), sys.exit(0)))
+for line in sys.stdin:
+    line = line.strip()
+    if not line: continue
+    try: event = json.loads(line)
+    except: continue
+    update = event.get('params', {}).get('update', {})
+    if not isinstance(update, dict): continue
+    if update.get('sessionUpdate') == 'agent_message_chunk':
+        content = update.get('content', {})
+        text = content.get('text', '') if isinstance(content, dict) else ''
+        if text: print(text, end='', flush=True)
+print('', flush=True)
+"
       ;;
     *)
       log "Unknown agent: $SHIPYARD_CLI"

@@ -47,6 +47,7 @@ export SHIPYARD_PROJECTS="$HOME/code"
 
 SHIPYARD_AGENT=dotbot ./factory.sh        # use dotbot instead of Claude
 SHIPYARD_AGENT=dotbot SHIPYARD_PROVIDER=anthropic ./factory.sh  # dotbot + Anthropic
+SHIPYARD_AGENT=grok ./factory.sh          # use the xAI Grok CLI (needs XAI_API_KEY)
 ```
 
 Run in its own terminal — not inside another tool. Monitor progress in a second terminal:
@@ -194,7 +195,7 @@ Shipyard's pipeline is an implementation detail of `factory.sh`:
 
 ## Requirements
 
-- [Claude Code](https://claude.ai/claude-code) or [dotbot](https://github.com/stevederico/dotbot)
+- [Claude Code](https://claude.ai/claude-code), [dotbot](https://github.com/stevederico/dotbot), or the [Grok CLI](https://docs.x.ai/build/cli) (needs `XAI_API_KEY`)
 - `gh` CLI (authenticated)
 - `agent-browser` (optional, for screenshot verification)
 
@@ -208,7 +209,7 @@ Shipyard does the same thing as GitHub Copilot Coding Agent and Claude for GitHu
 - **Configurable standards and workflow** — edit `factory.md` (a portable, framework-agnostic spec) to control exactly what the agent does
 - **Screenshot verification** — starts the dev server, reads the diff, screenshots the actual pages that changed
 - **Runs locally** — no data leaves your machine except API calls
-- **Swappable agent** — Claude Code or dotbot (any provider: xAI, Anthropic, OpenAI, Ollama)
+- **Swappable agent** — Claude Code, the xAI Grok CLI, or dotbot (any provider: xAI, Anthropic, OpenAI, Ollama)
 - **GitHub issues integration** — pull labeled issues into the queue, close them on completion
 - **No vendor lock-in** — swap Claude for another model, change the pipeline, fork it
 

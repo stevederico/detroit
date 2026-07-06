@@ -1,5 +1,13 @@
 # Changelog
 
+0.48.0
+
+  Combinable CLI flags
+  Fix parallel summary
+  CODE stage timeout
+  Surface swallowed errors
+  Safer worktree cleanup
+
 0.47.0
 
   Add self-test suite

@@ -5,6 +5,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # yagni: -S error until the factory.sh robustness pass clears the warning backlog
-      - run: shellcheck -S error factory.sh lib/*.sh test/*.sh
+      # -S warning: info/style hints (SC2016 backticks-in-singles, SC1091 source-follow) are noise here
+      - run: shellcheck -S warning factory.sh lib/*.sh test/*.sh
       - run: bash test/run.sh

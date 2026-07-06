@@ -4,9 +4,11 @@ Autonomous code factory that reads task files from `tasks/` and ships them as PR
 
 ## Structure
 
-- `factory.sh` — pipeline runner. Reads rules from `factory.md` and enforces them.
+- `factory.sh` — entry point. Parses flags, sources `lib/`, dispatches modes. Reads rules from `factory.md` and enforces them.
+- `lib/` — the actual pipeline, one sourced module per concern: `core.sh` (logging/status/cleanup), `args.sh` (flag parsing), `factory-md.sh` (spec parsing), `gates.sh` (deterministic rule gates), `agent.sh` (claude/dotbot/grok invocation), `devserver.sh` (dev server + test-account helpers), `modes.sh` (--parallel/--issues), `verify-prs.sh` (--verify), `pipeline.sh` (PICK→SHIP), `postship.sh` (CI→DONE).
 - `factory.md` — portable spec of the standards the agent must follow. 8 H2 sections: `## style`, `## build`, `## testing`, `## documentation`, `## environment`, `## quality`, `## observability`, `## security`. Each bullet is one rule. Spec: https://github.com/stevederico/factory-md
 - `tasks/` — task queue. One markdown file per task. Completed tasks move to `tasks/done/`.
+- `test/` — self-test suite (`bash test/run.sh`); runs with shellcheck in this repo's CI.
 - `logs/` — timestamped logs per run (gitignored)
 
 ## Task Format

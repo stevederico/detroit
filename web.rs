@@ -26,6 +26,19 @@ fn status_dir() -> PathBuf { root().join(".status") }
 fn task_dir() -> PathBuf { root().join("tasks") }
 fn log_dir() -> PathBuf { root().join("logs") }
 
+// Where the factory runs — same resolution as factory.sh: $DETROIT_PROJECTS,
+// else the parent of the detroit repo. HOME collapsed to ~ for display.
+fn projects() -> String {
+    let p = env::var("DETROIT_PROJECTS").unwrap_or_else(|_| {
+        root().parent().map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|| root().to_string_lossy().into_owned())
+    });
+    match env::var("HOME") {
+        Ok(home) => p.strip_prefix(&home).map(|r| format!("~{r}")).unwrap_or(p),
+        Err(_) => p,
+    }
+}
+
 // ── helpers ──────────────────────────────────────────────
 fn read(path: &PathBuf, limit: usize) -> String {
     match fs::read_to_string(path) {
@@ -188,8 +201,8 @@ fn state_json() -> String {
     let mut prs = Vec::new();
     for lf in logs.iter().take(20) { find_prs(&read(&log_dir().join(lf), 0), &mut prs); }
     prs.truncate(30);
-    s.push_str(&format!(",\"log\":{},\"logfile\":{},\"prs\":[{}]}}",
-        jesc(&log), jesc(&logfile),
+    s.push_str(&format!(",\"log\":{},\"logfile\":{},\"projects\":{},\"prs\":[{}]}}",
+        jesc(&log), jesc(&logfile), jesc(&projects()),
         prs.iter().map(|p| jesc(p)).collect::<Vec<_>>().join(",")));
     s
 }
@@ -306,6 +319,7 @@ const PAGE: &str = r##"<!doctype html><html lang="en"><head><meta charset="utf-8
 header{display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:5}
 header h1{font-size:16px;margin:0;letter-spacing:.5px}header .badge{background:var(--acc);color:#3a2a00;font-weight:700;padding:2px 8px;border-radius:5px;font-size:11px;letter-spacing:.1em}
 header .pill{margin-left:auto;color:var(--mut);font-size:12px}
+header .proj{color:var(--mut);font-size:12px;background:#0b0e13;border:1px solid var(--line);border-radius:5px;padding:2px 8px}
 main{display:grid;grid-template-columns:1.1fr 1fr 1.4fr;gap:14px;padding:16px;align-items:start}
 @media(max-width:900px){main{grid-template-columns:1fr}}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
@@ -325,7 +339,7 @@ textarea{min-height:70px;resize:vertical}.row{display:flex;gap:8px}.row>*{flex:1
 .approve{border:1px solid var(--acc);border-radius:8px;padding:10px;background:#1a1408}.approve .m{max-height:120px;overflow:auto;white-space:pre-wrap;font-size:11px;color:var(--mut);margin:6px 0}
 .empty{color:var(--mut);font-size:12px;font-style:italic}
 </style></head><body>
-<header><span class="badge">DETROIT</span><h1>factory floor</h1><span class="pill" id="pill">connecting…</span></header>
+<header><span class="badge">DETROIT</span><h1>factory floor</h1><code class="proj" id="proj" title="projects folder — where the factory runs"></code><span class="pill" id="pill">connecting…</span></header>
 <main>
   <section class="card">
     <h2>Queue <span id="qc"></span></h2>
@@ -365,7 +379,7 @@ async function run(p){await fetch(`/api/run?parallel=${p}`,{method:'POST'});tick
 async function decide(id,d){await fetch(`/api/approve?id=${q(id)}&decision=${d}`,{method:'POST'});tick()}
 let stuck=false;
 async function tick(){
-  try{const s=await(await fetch('/api/state')).json();stuck=false;$('#pill').textContent='live · '+new Date().toLocaleTimeString();
+  try{const s=await(await fetch('/api/state')).json();stuck=false;$('#pill').textContent='live · '+new Date().toLocaleTimeString(); $('#proj').textContent=s.projects?('▸ '+s.projects):'';
     $('#qc').textContent=s.pending.length||''; $('#dc').textContent=s.done.length||'';
     $('#queue').innerHTML=s.pending.length?s.pending.map(t=>`<div class="item"><div class="n">${esc(t.name)}${t.repo?`<span class="tag">${esc(t.repo)}</span>`:'<span class="tag">new repo</span>'}</div><div class="m">${esc(t.preview)}</div></div>`).join(''):'<span class="empty">no pending tasks</span>';
     $('#awaiting').innerHTML=s.awaiting.map(a=>`<div class="approve"><b>Plan ready · agent ${esc(a.id)}</b><div class="m">${esc(a.plan)}</div><div class="row"><button class="ok" onclick="decide('${esc(a.id)}','approve')">Approve</button><button class="bad" onclick="decide('${esc(a.id)}','reject')">Reject</button></div></div>`).join('');

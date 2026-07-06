@@ -4,6 +4,7 @@
   Local web UI (web.rs, std-only Rust)
   Monitor floor, create tasks, trigger runs
   Browser plan approval (DETROIT_APPROVE_PLAN=web)
+  Show projects folder in header
 
 0.40.0
   Rewrite README intro

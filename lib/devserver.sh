@@ -20,9 +20,11 @@ for cmd in ['start', 'dev', 'preview']:
 " 2>/dev/null)
 }
 
-# detect_dev_ports — scan project config for ports (plus defaults) → DEV_PORTS (csv)
+# detect_dev_ports — scan project config for ports (plus seeded defaults) → DEV_PORTS (csv)
 detect_dev_ports() {
-  DEV_PORTS=$(python3 -c "
+  local seed
+  seed=$(resolve_knob DETROIT_DEV_PORTS "dev ports" "3000,5173,8000")
+  DEV_PORTS=$(DETROIT_SEED_PORTS="$seed" python3 -c "
 import json, re, os
 ports = set()
 # Check vite.config for frontend port
@@ -50,8 +52,8 @@ for f in ['package.json', 'backend/package.json']:
         for v in scripts.values():
             for m in re.finditer(r'--port\s+(\d+)', v):
                 ports.add(m.group(1))
-# Always include defaults: vite (5173) and common backend ports
-ports.update(['3000', '5173', '8000'])
+# Seed ports: DETROIT_DEV_PORTS env > factory.md 'dev ports:' bullet > vite/common defaults
+ports.update(p for p in os.environ.get('DETROIT_SEED_PORTS', '').replace(' ', '').split(',') if p)
 print(','.join(sorted(ports)))
 " 2>/dev/null)
 }
@@ -133,22 +135,40 @@ if routes:
 }
 
 # precreate_test_account — signup (or signin) the shared test account against
-# the backend derived from DEV_URL → TEST_AUTH (empty if no auth API)
+# the backend derived from DEV_URL → TEST_AUTH (empty if no auth API), plus
+# TEST_EMAIL/TEST_PASSWORD for the verify prompts. Knobs (env > factory.md
+# `## environment` bullet > default): DETROIT_TEST_EMAIL + DETROIT_TEST_PASSWORD
+# (bullet `test account: <email> <password>`), DETROIT_SIGNUP_PATH (bullet
+# `signup api:`; signin path derived), DETROIT_BACKEND_PORT (bullet `backend port:`).
 precreate_test_account() {
   TEST_AUTH=""
-  local backend_url signup_result signin_result
-  backend_url=$(echo "$DEV_URL" | sed 's/:5173/:8000/' | sed 's/:5174/:8000/')
-  signup_result=$(curl -s -X POST "$backend_url/api/signup" \
+  local backend_url signup_result signin_result acct signup_path signin_path backend_port
+
+  TEST_EMAIL="${DETROIT_TEST_EMAIL:-}"
+  TEST_PASSWORD="${DETROIT_TEST_PASSWORD:-}"
+  if [ -z "$TEST_EMAIL" ] || [ -z "$TEST_PASSWORD" ]; then
+    acct=$(read_env_bullet "test account" "$DETROIT/factory.md")
+    [ -z "$TEST_EMAIL" ] && TEST_EMAIL=$(echo "$acct" | awk '{print $1}')
+    [ -z "$TEST_PASSWORD" ] && TEST_PASSWORD=$(echo "$acct" | awk '{print $2}')
+  fi
+  TEST_EMAIL="${TEST_EMAIL:-test@detroit.dev}"
+  TEST_PASSWORD="${TEST_PASSWORD:-detroit123}"
+  signup_path=$(resolve_knob DETROIT_SIGNUP_PATH "signup api" "/api/signup")
+  signin_path="${signup_path/signup/signin}"
+  backend_port=$(resolve_knob DETROIT_BACKEND_PORT "backend port" "8000")
+
+  backend_url=$(echo "$DEV_URL" | sed "s/:5173/:$backend_port/" | sed "s/:5174/:$backend_port/")
+  signup_result=$(curl -s -X POST "$backend_url$signup_path" \
     -H "Content-Type: application/json" \
-    -d '{"name":"Test User","email":"test@detroit.dev","password":"detroit123"}' 2>/dev/null)
+    -d "{\"name\":\"Test User\",\"email\":\"$TEST_EMAIL\",\"password\":\"$TEST_PASSWORD\"}" 2>/dev/null)
   if echo "$signup_result" | python3 -c "import sys,json; json.load(sys.stdin)['token']" 2>/dev/null; then
-    TEST_AUTH="Test account created (test@detroit.dev / detroit123)"
+    TEST_AUTH="Test account created ($TEST_EMAIL / $TEST_PASSWORD)"
   else
-    signin_result=$(curl -s -X POST "$backend_url/api/signin" \
+    signin_result=$(curl -s -X POST "$backend_url$signin_path" \
       -H "Content-Type: application/json" \
-      -d '{"email":"test@detroit.dev","password":"detroit123"}' 2>/dev/null)
+      -d "{\"email\":\"$TEST_EMAIL\",\"password\":\"$TEST_PASSWORD\"}" 2>/dev/null)
     if echo "$signin_result" | python3 -c "import sys,json; json.load(sys.stdin)['token']" 2>/dev/null; then
-      TEST_AUTH="Test account exists (test@detroit.dev / detroit123)"
+      TEST_AUTH="Test account exists ($TEST_EMAIL / $TEST_PASSWORD)"
     fi
   fi
 }

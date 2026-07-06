@@ -46,6 +46,30 @@ factory_stages() {
   done
 }
 
+# read_env_bullet <key> <factory.md path>
+# Reads a `key: value` bullet from `## environment` (same key:value bullet
+# shape factory_stages established). First match wins; empty if absent.
+read_env_bullet() {
+  local key="$1" file="$2" line
+  factory_section "environment" "$file" | while IFS= read -r line; do
+    line=$(echo "$line" | sed -E 's/^[[:space:]]*[-*+][[:space:]]*//; s/^![[:space:]]*//')
+    case "$line" in
+      "$key:"*)
+        echo "${line#*:}" | sed -E 's/^[[:space:]]+|[[:space:]]+$//g'
+        break ;;
+    esac
+  done
+}
+
+# resolve_knob <ENV_VAR_NAME> <bullet-key> <default>
+# Precedence: process env var > factory.md `## environment` bullet > default.
+resolve_knob() {
+  local val="${!1:-}"
+  [ -n "$val" ] || val=$(read_env_bullet "$2" "$DETROIT/factory.md")
+  [ -n "$val" ] || val="$3"
+  echo "$val"
+}
+
 # factory_rules_for_stage <categories-csv> <factory.md path>
 # Like factory_rules, but only the named gate-category sections (comma list).
 factory_rules_for_stage() {

@@ -1,5 +1,11 @@
 # Changelog
 
+0.52.0
+
+  Environment knobs
+  Node version from spec
+  Configurable test account
+
 0.51.0
 
   Verified ship detection

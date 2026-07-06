@@ -1,7 +1,9 @@
 #!/bin/bash
 # factory.sh — detroit code factory
 # Reads next task file from tasks/, ships them as PRs.
-# Usage: bash factory.sh [--dry-run] [--issues owner/repo] [--parallel N] [--verify owner/repo]
+# Usage: bash factory.sh [--dry-run] [--issues owner/repo] [--parallel N] [--verify owner/repo [pr]]
+
+set -u -o pipefail  # no -e: pipeline control flow inspects failures explicitly
 
 DETROIT="${DETROIT_DIR:-$(cd "$(dirname "$0")" && pwd)}"
 TASK_DIR="$DETROIT/tasks"
@@ -16,13 +18,19 @@ mkdir -p "$LOGDIR" "$DONE_DIR" "$LOCK_DIR" "$STATUS_DIR"
 AGENT_ID="${DETROIT_AGENT_ID:-0}"
 LOGFILE="$LOGDIR/$TIMESTAMP-w$AGENT_ID.log"
 WORKTREE_DIR=""
+MAIN_REPO_DIR=""
+TASK_FILE=""
 # Force headless browser for all agent-browser calls
 export AGENT_BROWSER_HEADED=""
 
 # Shared function libraries (definitions only — no side effects on source)
 . "$DETROIT/lib/core.sh"
+. "$DETROIT/lib/args.sh"
 . "$DETROIT/lib/factory-md.sh"
 . "$DETROIT/lib/gates.sh"
+
+parse_args "$@" || exit 2
+if [ "$MODE" = "help" ]; then usage; exit 0; fi
 
 # ── Agent configuration ───────────────────────────────────
 # DETROIT_AGENT: claude (default), dotbot, grok
@@ -150,8 +158,8 @@ print('', flush=True)
 trap cleanup INT
 
 # ── PARALLEL: spawn N agents ──────────────────────────────
-if [ "$1" = "--parallel" ]; then
-  AGENTS="${2:-3}"
+if [ "$MODE" = "parallel" ]; then
+  AGENTS="$PARALLEL_N"
   rm -f "$STATUS_DIR"/agent-* 2>/dev/null
 
   echo "━━━ DETROIT: $AGENTS parallel agents ━━━"
@@ -159,7 +167,11 @@ if [ "$1" = "--parallel" ]; then
 
   PIDS=""
   for i in $(seq 1 "$AGENTS"); do
-    DETROIT_AGENT_ID="$i" bash "$0" &
+    if [ "$DRY_RUN" = true ]; then
+      DETROIT_AGENT_ID="$i" bash "$0" --dry-run &
+    else
+      DETROIT_AGENT_ID="$i" bash "$0" &
+    fi
     PIDS="$PIDS $!"
     sleep 1
   done
@@ -176,8 +188,8 @@ if [ "$1" = "--parallel" ]; then
   echo "━━━ SUMMARY ━━━"
   for i in $(seq 1 "$AGENTS"); do
     STATUS="unknown"
-    if [ -f "$STATUS_DIR/worker-$i" ]; then
-      STATUS=$(cat "$STATUS_DIR/worker-$i")
+    if [ -f "$STATUS_DIR/agent-$i" ]; then
+      STATUS=$(cat "$STATUS_DIR/agent-$i")
     fi
     echo "  W$i: $STATUS"
   done
@@ -187,13 +199,9 @@ if [ "$1" = "--parallel" ]; then
 fi
 
 # ── VERIFY: screenshot all open PRs for a repo ───────────
-if [ "$1" = "--verify" ]; then
-  REPO="$2"
-  PR_FILTER="$3"
-  if [ -z "$REPO" ]; then
-    echo "Usage: bash factory.sh --verify owner/repo [pr-number]"
-    exit 1
-  fi
+if [ "$MODE" = "verify" ]; then
+  REPO="$VERIFY_REPO"
+  PR_FILTER="$VERIFY_PR"
 
   REPO_NAME=$(echo "$REPO" | cut -d/ -f2)
   REPO_DIR=$(find "$PROJECTS" -maxdepth 1 -iname "$REPO_NAME" -type d 2>/dev/null | head -1)
@@ -207,7 +215,7 @@ if [ "$1" = "--verify" ]; then
   echo "Repo: $REPO_DIR"
   echo ""
 
-  cd "$REPO_DIR"
+  cd "$REPO_DIR" || exit 1
   # Clean up any stale worktrees from previous runs
   rm -rf .worktrees 2>/dev/null
   git worktree prune 2>/dev/null
@@ -260,11 +268,10 @@ for pr in prs:
     mkdir -p "$SCREENSHOT_DIR"
 
     # Checkout branch directly (no worktree — need real DB, .env, etc.)
-    cd "$REPO_DIR"
+    cd "$REPO_DIR" || continue
     rm -rf .worktrees 2>/dev/null
     git worktree prune 2>/dev/null
-    git checkout "$BRANCH" 2>/dev/null
-    if [ $? -ne 0 ]; then
+    if ! git checkout "$BRANCH"; then
       echo "  Could not checkout $BRANCH — skipping"
       echo ""
       continue
@@ -300,7 +307,7 @@ print(','.join(sorted(ports)))
 " 2>/dev/null)
     if [ -n "$DEV_PORTS" ]; then
       echo "  Clearing ports $DEV_PORTS..."
-      lsof -ti :$DEV_PORTS 2>/dev/null | xargs kill 2>/dev/null
+      lsof -ti :"$DEV_PORTS" 2>/dev/null | xargs kill 2>/dev/null
       sleep 1
     fi
 
@@ -339,7 +346,7 @@ for cmd in ['start', 'dev']:
       echo "  Dev server failed to start — skipping"
       kill "$DEV_PID" 2>/dev/null; wait "$DEV_PID" 2>/dev/null
       if [ -n "$BACKEND_PID" ]; then kill "$BACKEND_PID" 2>/dev/null; wait "$BACKEND_PID" 2>/dev/null; fi
-      [ -n "$DEV_PORTS" ] && lsof -ti :$DEV_PORTS 2>/dev/null | xargs kill 2>/dev/null
+      [ -n "$DEV_PORTS" ] && lsof -ti :"$DEV_PORTS" 2>/dev/null | xargs kill 2>/dev/null
       git checkout "$BASE_BRANCH" 2>/dev/null
       echo ""
       continue
@@ -418,26 +425,25 @@ Steps:
 
     kill "$DEV_PID" 2>/dev/null; wait "$DEV_PID" 2>/dev/null
     if [ -n "$BACKEND_PID" ]; then kill "$BACKEND_PID" 2>/dev/null; wait "$BACKEND_PID" 2>/dev/null; fi
-    [ -n "$DEV_PORTS" ] && lsof -ti :$DEV_PORTS 2>/dev/null | xargs kill 2>/dev/null
+    [ -n "$DEV_PORTS" ] && lsof -ti :"$DEV_PORTS" 2>/dev/null | xargs kill 2>/dev/null
 
     SCREENSHOTS=$(find "$SCREENSHOT_DIR" -name '*.png' -type f 2>/dev/null)
     if [ -n "$SCREENSHOTS" ]; then
       GH_OWNER=$(echo "$REPO" | cut -d/ -f1)
 
-      cp "$SCREENSHOT_DIR"/*.png "$REPO_DIR/" 2>/dev/null
-      cd "$REPO_DIR"
-      git add *.png 2>/dev/null
-      git commit -m "Add verification screenshots" 2>/dev/null
-      git push origin "$BRANCH" 2>/dev/null
-
+      cd "$REPO_DIR" || continue
       COMMENT="## Verification Screenshots\n"
-      for img in "$REPO_DIR"/*.png; do
+      for img in "$SCREENSHOT_DIR"/*.png; do
+        [ -e "$img" ] || continue  # empty glob — no screenshots
         IMG_NAME=$(basename "$img")
+        cp "$img" "$REPO_DIR/" && git add -- "$IMG_NAME"
         COMMENT="${COMMENT}\n### ${IMG_NAME%.png}\n![${IMG_NAME}](https://github.com/${GH_OWNER}/${REPO_NAME}/blob/${BRANCH}/${IMG_NAME}?raw=true)\n"
       done
+      git commit -m "Add verification screenshots"
+      git push origin "$BRANCH"
 
       gh pr comment "$PR_NUM" --repo "$REPO" \
-        --body "$(echo -e "$COMMENT")" 2>/dev/null
+        --body "$(echo -e "$COMMENT")"
       echo "  Screenshots attached to PR #$PR_NUM"
     else
       echo "  No screenshots taken"
@@ -452,28 +458,25 @@ ${VERIFY_REASON:-no output from verify session}
     fi
     rm -f "$VERIFY_LOG"
 
-    cd "$REPO_DIR"
-    git checkout "$BASE_BRANCH" 2>/dev/null
+    cd "$REPO_DIR" || continue
+    git checkout "$BASE_BRANCH"
     echo ""
   done < "$PR_LIST"
   rm -f "$PR_LIST"
 
-  cd "$REPO_DIR"
-  git checkout "$BASE_BRANCH" 2>/dev/null
+  cd "$REPO_DIR" || exit 1
+  git checkout "$BASE_BRANCH"
   echo "━━━ DONE ━━━"
   exit 0
 fi
 
 # ── ISSUES: pull GitHub issues into tasks/ ─────────────────
-if [ "$1" = "--issues" ]; then
-  REPO="$2"
-  if [ -z "$REPO" ]; then
-    echo "Usage: bash factory.sh --issues owner/repo"
-    exit 1
-  fi
+if [ "$MODE" = "issues" ]; then
+  REPO="$ISSUES_REPO"
 
   log "Syncing issues from $REPO (label: detroit)"
-  export PROJECT_NAME=$(echo "$REPO" | cut -d/ -f2)
+  PROJECT_NAME=$(echo "$REPO" | cut -d/ -f2)
+  export PROJECT_NAME
   export REPO TASK_DIR
 
   gh issue list --repo "$REPO" --label "detroit" --state open --json number,title,body --limit 50 2>/dev/null | \
@@ -545,11 +548,6 @@ log "Task: $TASK_NAME"
 log "Repo: ${TASK_REPO:-(new repo)}"
 update_status "$TASK_NAME — picked"
 
-DRY_RUN=false
-if [ "$1" = "--dry-run" ]; then
-  DRY_RUN=true
-fi
-
 # ── ROUTE (TRIAGE) ────────────────────────────────────────
 stage "ROUTE"
 update_status "$TASK_NAME — routing"
@@ -602,7 +600,7 @@ log "Repo: $REPO_NAME ($REPO_DIR)"
 # ── PREPARE (ENVIRONMENT) ─────────────────────────────────
 stage "PREPARE"
 update_status "$TASK_NAME — preparing"
-cd "$REPO_DIR" 2>/dev/null
+cd "$REPO_DIR" || { log "Cannot cd to $REPO_DIR"; exit 1; }
 if [ "$IS_NEW_REPO" = false ]; then
   HAS_REMOTE=$(git remote 2>/dev/null | head -1)
   if [ -n "$HAS_REMOTE" ]; then
@@ -627,6 +625,7 @@ fi
 
 BRANCH="detroit/$TASK_NAME"
 if [ "$IS_NEW_REPO" = false ] && [ "$DRY_RUN" = false ]; then
+  MAIN_REPO_DIR="$REPO_DIR"
   git branch -D "$BRANCH" 2>/dev/null
   # Use worktree for isolation (parallel-safe)
   WORKTREE_DIR="$REPO_DIR/.worktrees/$TASK_NAME"
@@ -634,7 +633,7 @@ if [ "$IS_NEW_REPO" = false ] && [ "$DRY_RUN" = false ]; then
   git worktree prune 2>/dev/null
   git worktree add "$WORKTREE_DIR" -b "$BRANCH" 2>&1 | ptee
   REPO_DIR="$WORKTREE_DIR"
-  cd "$REPO_DIR"
+  cd "$REPO_DIR" || exit 1
 fi
 log "Branch: $BRANCH"
 
@@ -857,8 +856,10 @@ Pipeline (execute in order):
 17. Print FACTORY_RESULT:SUCCESS or FACTORY_RESULT:FAILED
 PROMPT_EOF
 
-# Stream agent output in real time
-run_agent "$PROMPT_FILE" --verbose | ptee
+# Stream agent output in real time (hung sessions die at DETROIT_CODE_TIMEOUT)
+run_agent "$PROMPT_FILE" --verbose \
+  --timeout "${DETROIT_CODE_TIMEOUT:-3600}" \
+  --timeout-msg "CODE stage timed out after ${DETROIT_CODE_TIMEOUT:-3600}s" | ptee
 rm -f "$PROMPT_FILE"
 
 CODE_END=$(date +%s)
@@ -1038,7 +1039,7 @@ if grep -q "FACTORY_RESULT:SUCCESS" "$LOGFILE" 2>/dev/null && command -v agent-b
   # Detect dev server command from package.json
   DEV_CMD=""
   DEV_URL=""
-  cd "$REPO_DIR"
+  cd "$REPO_DIR" || exit 1
   if [ -f "package.json" ]; then
     DEV_CMD=$(python3 -c "
 import json
@@ -1086,17 +1087,17 @@ print(','.join(sorted(ports)))
 " 2>/dev/null)
     if [ -n "$DEV_PORTS" ]; then
       log "Clearing ports $DEV_PORTS..."
-      lsof -ti :$DEV_PORTS 2>/dev/null | xargs kill 2>/dev/null
+      lsof -ti :"$DEV_PORTS" 2>/dev/null | xargs kill 2>/dev/null
       sleep 1
     fi
 
-    # Install deps (worktree symlinks may be broken)
+    # Install deps (worktree symlinks may be broken); surface failures in the log
     if [ -n "$WORKTREE_DIR" ] && [ -f "package.json" ]; then
       log "Installing dependencies..."
-      npm install --silent 2>/dev/null
+      npm install --silent 2>&1 | tail -5 | ptee
       # Install workspace deps (e.g. backend/)
       if grep -q '"workspaces"' package.json 2>/dev/null; then
-        npm install --workspaces --silent 2>/dev/null
+        npm install --workspaces --silent 2>&1 | tail -5 | ptee
       fi
     fi
 
@@ -1269,7 +1270,7 @@ FIX_EOF
       kill "$BACKEND_PID" 2>/dev/null; wait "$BACKEND_PID" 2>/dev/null
     fi
     # Kill any leftover node processes on the dev ports
-    [ -n "$DEV_PORTS" ] && lsof -ti :$DEV_PORTS 2>/dev/null | xargs kill 2>/dev/null
+    [ -n "$DEV_PORTS" ] && lsof -ti :"$DEV_PORTS" 2>/dev/null | xargs kill 2>/dev/null
   else
     log "No dev/start/preview script found — skipping verification"
   fi
@@ -1279,22 +1280,20 @@ FIX_EOF
   if [ -n "$SCREENSHOTS" ] && [ -n "$PR_NUM" ]; then
     GH_OWNER=$(gh api user --jq '.login' 2>/dev/null)
 
-    # Commit screenshots to branch
-    cp "$SCREENSHOT_DIR"/*.png "$REPO_DIR/" 2>/dev/null
-    cd "$REPO_DIR"
-    git add *.png 2>/dev/null
-    git commit -m "Add verification screenshots" 2>/dev/null
-    git push origin "$BRANCH" 2>/dev/null
-
-    # Build PR comment with all screenshots
+    # Commit screenshots to branch and build the PR comment in one pass
+    cd "$REPO_DIR" || exit 1
     COMMENT="## Verification Screenshots\n"
-    for img in "$REPO_DIR"/*.png; do
+    for img in "$SCREENSHOT_DIR"/*.png; do
+      [ -e "$img" ] || continue  # empty glob — no screenshots
       IMG_NAME=$(basename "$img")
+      cp "$img" "$REPO_DIR/" && git add -- "$IMG_NAME"
       COMMENT="${COMMENT}\n### ${IMG_NAME%.png}\n![${IMG_NAME}](https://github.com/${GH_OWNER}/${REPO_NAME}/blob/${BRANCH}/${IMG_NAME}?raw=true)\n"
     done
+    git commit -m "Add verification screenshots" 2>&1 | ptee
+    git push origin "$BRANCH" 2>&1 | ptee
 
     gh pr comment "$PR_NUM" --repo "${GH_OWNER}/${REPO_NAME}" \
-      --body "$(echo -e "$COMMENT")" 2>/dev/null
+      --body "$(echo -e "$COMMENT")" 2>&1 | ptee
     log "Screenshots attached to PR #$PR_NUM"
   elif [ -n "$PR_NUM" ]; then
     # Determine why screenshots are missing
@@ -1355,11 +1354,10 @@ else
 fi
 
 # Clean up worktree and lock
-if [ -n "$WORKTREE_DIR" ] && [ -d "$WORKTREE_DIR" ]; then
-  ORIG_REPO=$(dirname "$WORKTREE_DIR")/..
-  cd "$DETROIT"
-  rm -rf "$WORKTREE_DIR" 2>/dev/null
-  git -C "$(cd "$ORIG_REPO" && pwd)" worktree prune 2>/dev/null
+if [ -n "$WORKTREE_DIR" ] && [ -d "$WORKTREE_DIR" ] && [ -n "$MAIN_REPO_DIR" ]; then
+  cd "$DETROIT" || exit 1
+  git -C "$MAIN_REPO_DIR" worktree remove --force "$WORKTREE_DIR" 2>/dev/null || rm -rf "$WORKTREE_DIR"
+  git -C "$MAIN_REPO_DIR" worktree prune 2>/dev/null
 fi
 if [ -n "$TASK_FILE" ]; then
   rm -rf "$LOCK_DIR/$(basename "$TASK_FILE").lock" 2>/dev/null

@@ -47,6 +47,17 @@ Updated with insights from AIE-26 code factory discussions (Ramp Inspect, Stripe
 - [ ] Intake breadth: Slack, Linear, PR comments, Chrome extension/visual selection, in addition to `tasks/` and GitHub issues
 - [ ] "Filesystem becomes part of the agent's brain" — deeper persistent memory and context across runs
 
+### Full SDLC Coverage and Self-Improvement Loop
+- [ ] Continuous signal ingestion and advanced triage to turn diverse inputs into owned goals and actions
+- [ ] Long-running goal agents and multi-day autonomous missions/automations with coordinated multi-agent workflows
+- [ ] Persistent remote execution environments for agents beyond local CLI
+- [ ] Expanded automated quality gates: exhaustive code review, browser-driven test generation and QA, security reviews (STRIDE/OWASP style)
+- [ ] Operations and knowledge layer: automated root cause analysis and postmortems, always-current documentation, deployment rollouts, outcome analytics
+- [ ] Outcome metrics focus: signal-to-production cycle time, autonomy ratio (work with no human touch), incident MTTR, code shelf life, cost per merged change
+- [ ] Enhanced governance: risk tiers per repo/project, policy enforcement (command allow/deny lists), full auditable trails; humans define the rules
+- [ ] Sovereign deployment paths: easy support for on-prem, hybrid, and air-gapped setups
+- [ ] Full-loop self-improvement: every stage (triage through operations) strengthens the others and the system compounds over cycles
+
 ## Key principles
 - Success depends more on **engineering fundamentals** (the 8 stages + reproducible envs + fast tests) than model choice.
 - Ramp: 30%+ of merged PRs, full sandboxes + observability wiring + self-verification.

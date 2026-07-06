@@ -115,6 +115,17 @@ fn repo_of(md: &str) -> String {
     String::new()
 }
 
+// Optional `labels:` frontmatter — comma-separated.
+fn labels_of(md: &str) -> Vec<String> {
+    for ln in md.lines() {
+        let t = ln.trim();
+        if let Some(rest) = t.strip_prefix("labels:") {
+            return rest.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+        }
+    }
+    Vec::new()
+}
+
 fn md_stems(dir: &PathBuf) -> Vec<String> {
     let mut v: Vec<String> = fs::read_dir(dir).into_iter().flatten().flatten()
         .filter(|e| e.path().is_file())
@@ -149,36 +160,18 @@ fn find_prs(text: &str, out: &mut Vec<String>) {
 
 // ── state ────────────────────────────────────────────────
 fn state_json() -> String {
-    let mut s = String::from("{");
+    use std::collections::BTreeSet;
 
-    // pending
-    s.push_str("\"pending\":[");
-    let mut first = true;
-    for stem in md_stems(&task_dir()) {
-        let md = read(&task_dir().join(format!("{stem}.md")), 0);
-        if !first { s.push(','); } first = false;
-        s.push_str(&format!("{{\"name\":{},\"repo\":{},\"preview\":{}}}",
-            jesc(&stem), jesc(&repo_of(&md)), jesc(&preview(&md))));
-    }
-    s.push(']');
-
-    // done
-    s.push_str(",\"done\":[");
-    let done: Vec<String> = md_stems(&task_dir().join("done"));
-    s.push_str(&done.iter().map(|d| jesc(d)).collect::<Vec<_>>().join(","));
-    s.push(']');
-
-    // agents + awaiting (both live in .status)
-    let mut agents = String::new();
+    // agents + awaiting (both live in .status). Collect agents first so task
+    // status can be derived from what an agent is currently working on.
+    let mut agents_vec: Vec<(String, String)> = Vec::new();
     let mut awaiting = String::new();
     if let Ok(rd) = fs::read_dir(status_dir()) {
         let mut entries: Vec<_> = rd.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
         entries.sort();
         for name in &entries {
             if let Some(id) = name.strip_prefix("agent-") {
-                let st = read(&status_dir().join(name), 0).trim().to_string();
-                if !agents.is_empty() { agents.push(','); }
-                agents.push_str(&format!("{{\"id\":{},\"status\":{}}}", jesc(id), jesc(&st)));
+                agents_vec.push((id.to_string(), read(&status_dir().join(name), 0).trim().to_string()));
             } else if let Some(id) = name.strip_prefix("approve-request-") {
                 let plan_path = PathBuf::from(read(&status_dir().join(name), 0).trim());
                 let plan = read(&plan_path, 4000).trim().to_string();
@@ -187,7 +180,31 @@ fn state_json() -> String {
             }
         }
     }
-    s.push_str(&format!(",\"agents\":[{agents}],\"awaiting\":[{awaiting}]"));
+    let agents = agents_vec.iter()
+        .map(|(id, st)| format!("{{\"id\":{},\"status\":{}}}", jesc(id), jesc(st)))
+        .collect::<Vec<_>>().join(",");
+
+    // tasks: pending files + derived status + labels
+    let mut labelset: BTreeSet<String> = BTreeSet::new();
+    let mut tasks = String::new();
+    let (mut queued, mut running, mut awaiting_n) = (0u32, 0u32, 0u32);
+    for stem in md_stems(&task_dir()) {
+        let md = read(&task_dir().join(format!("{stem}.md")), 0);
+        let labels = labels_of(&md);
+        for l in &labels { labelset.insert(l.clone()); }
+        let mut status = "queued";
+        for (_, st) in &agents_vec {
+            if st.contains(&stem) { status = if st.contains("awaiting") { "awaiting" } else { "running" }; break; }
+        }
+        match status { "running" => running += 1, "awaiting" => awaiting_n += 1, _ => queued += 1 }
+        if !tasks.is_empty() { tasks.push(','); }
+        tasks.push_str(&format!("{{\"name\":{},\"repo\":{},\"preview\":{},\"labels\":[{}],\"status\":{}}}",
+            jesc(&stem), jesc(&repo_of(&md)), jesc(&preview(&md)),
+            labels.iter().map(|l| jesc(l)).collect::<Vec<_>>().join(","), jesc(status)));
+    }
+    let done: Vec<String> = md_stems(&task_dir().join("done"));
+    let done_json = done.iter().map(|d| jesc(d)).collect::<Vec<_>>().join(",");
+    let labels_json = labelset.iter().map(|l| jesc(l)).collect::<Vec<_>>().join(",");
 
     // logs + prs
     let mut logs: Vec<String> = fs::read_dir(log_dir()).into_iter().flatten().flatten()
@@ -201,14 +218,16 @@ fn state_json() -> String {
     let mut prs = Vec::new();
     for lf in logs.iter().take(20) { find_prs(&read(&log_dir().join(lf), 0), &mut prs); }
     prs.truncate(30);
-    s.push_str(&format!(",\"log\":{},\"logfile\":{},\"projects\":{},\"prs\":[{}]}}",
-        jesc(&log), jesc(&logfile), jesc(&projects()),
-        prs.iter().map(|p| jesc(p)).collect::<Vec<_>>().join(",")));
-    s
+    let prs_json = prs.iter().map(|p| jesc(p)).collect::<Vec<_>>().join(",");
+
+    format!("{{\"stats\":{{\"queued\":{queued},\"running\":{running},\"awaiting\":{awaiting_n},\"done\":{},\"prs\":{}}},\
+\"labels\":[{labels_json}],\"tasks\":[{tasks}],\"done\":[{done_json}],\"agents\":[{agents}],\"awaiting\":[{awaiting}],\
+\"log\":{},\"logfile\":{},\"projects\":{},\"prs\":[{prs_json}]}}",
+        done.len(), prs.len(), jesc(&log), jesc(&logfile), jesc(&projects()))
 }
 
 // ── actions ──────────────────────────────────────────────
-fn create_task(name: &str, repo: &str, body: &str) -> String {
+fn create_task(name: &str, repo: &str, labels: &str, body: &str) -> String {
     let mut slug: String = name.to_lowercase().chars()
         .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '-' }).collect();
     while slug.contains("--") { slug = slug.replace("--", "-"); }
@@ -218,7 +237,13 @@ fn create_task(name: &str, repo: &str, body: &str) -> String {
     let mut path = task_dir().join(format!("{slug}.md"));
     let mut n = 1;
     while path.exists() { path = task_dir().join(format!("{slug}-{n}.md")); n += 1; }
-    let fm = if repo.trim().is_empty() { String::new() } else { format!("---\nrepo: {}\n---\n\n", repo.trim()) };
+    let mut fm = String::new();
+    if !repo.trim().is_empty() || !labels.trim().is_empty() {
+        fm.push_str("---\n");
+        if !repo.trim().is_empty() { fm.push_str(&format!("repo: {}\n", repo.trim())); }
+        if !labels.trim().is_empty() { fm.push_str(&format!("labels: {}\n", labels.trim())); }
+        fm.push_str("---\n\n");
+    }
     let _ = fs::write(&path, format!("{fm}{}\n", body.trim()));
     path.file_name().unwrap().to_string_lossy().into_owned()
 }
@@ -289,7 +314,7 @@ fn handle(mut stream: TcpStream) {
         ("GET", "/") => send(&mut stream, "200 OK", "text/html; charset=utf-8", PAGE.as_bytes()),
         ("GET", "/api/state") => send(&mut stream, "200 OK", "application/json", state_json().as_bytes()),
         ("POST", "/api/task") => {
-            let name = create_task(&query(qs, "name"), &query(qs, "repo"), &body_str);
+            let name = create_task(&query(qs, "name"), &query(qs, "repo"), &query(qs, "labels"), &body_str);
             send(&mut stream, "200 OK", "application/json", format!("{{\"created\":{}}}", jesc(&name)).as_bytes());
         }
         ("POST", "/api/run") => { trigger_run(&query(qs, "parallel")); send(&mut stream, "200 OK", "application/json", b"{\"started\":true}"); }
@@ -338,30 +363,57 @@ input,textarea{width:100%;background:#050505;border:1px solid var(--line);border
 textarea{min-height:70px;resize:vertical}.row{display:flex;gap:8px}.row>*{flex:1}
 .approve{border:1px solid var(--acc);border-radius:0;padding:10px;background:#1a1408}.approve .m{max-height:120px;overflow:auto;white-space:pre-wrap;font-size:11px;color:var(--mut);margin:6px 0}
 .empty{color:var(--mut);font-size:12px;font-style:italic}
+.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;padding:16px 16px 0}
+@media(max-width:760px){.stats{grid-template-columns:repeat(2,1fr)}}
+.tile{background:var(--panel);border:1px solid var(--line);padding:12px 14px}
+.tile .tv{font-size:26px;font-weight:600;color:var(--acc);font-family:'Geist Mono',ui-monospace,monospace;line-height:1}
+.tile .tk{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--mut);margin-top:6px}
+.full{margin:14px 16px 0}
+main.two{grid-template-columns:1fr 1.4fr}
+@media(max-width:900px){main.two{grid-template-columns:1fr}}
+.toolbar{display:flex;gap:8px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.toolbar input,.toolbar select{width:auto;flex:0 0 auto;background:#050505;border:1px solid var(--line);color:var(--ink);padding:6px 8px;font:inherit}
+.toolbar input#search{flex:1 1 220px}
+.newtask{display:grid;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.rows{display:flex;flex-direction:column}
+.taskrow{display:flex;align-items:flex-start;gap:12px;padding:11px 14px;border-bottom:1px solid var(--line)}
+.taskrow:last-child{border-bottom:0}
+.tr-main{flex:1;min-width:0}.tr-name{font-weight:600}.tr-prev{color:var(--mut);font-size:12px;margin-top:3px}
+.tr-repo{font-size:11px;color:var(--acc);white-space:nowrap;padding-top:2px}
+.chip{font-size:10px;color:var(--mut);border:1px solid var(--line);padding:1px 6px;margin-left:6px;text-transform:uppercase;letter-spacing:.06em}
+.badge-st{font-size:10px;text-transform:uppercase;letter-spacing:.1em;padding:3px 7px;border:1px solid var(--line);white-space:nowrap;flex:none;min-width:64px;text-align:center}
+.badge-st.queued{color:var(--mut)}
+.badge-st.running{color:#000;background:var(--acc);border-color:var(--acc)}
+.badge-st.awaiting{color:#000;background:#f0b429;border-color:#f0b429}
+.badge-st.done{color:var(--ok);border-color:var(--ok)}
 </style></head><body>
 <header><span class="badge">DETROIT</span><h1>factory floor</h1><code class="proj" id="proj" title="projects folder — where the factory runs"></code><span class="pill" id="pill">connecting…</span></header>
-<main>
-  <section class="card">
-    <h2>Queue <span id="qc"></span></h2>
-    <div class="body">
-      <div id="awaiting"></div>
-      <div id="queue"><span class="empty">no pending tasks</span></div>
-      <details><summary style="cursor:pointer;color:var(--mut);font-size:12px">+ new task</summary>
-        <div class="body" style="padding:10px 0 0">
-          <input id="t-name" placeholder="task name (e.g. add-dark-mode)">
-          <input id="t-repo" placeholder="repo (optional — blank = new repo)">
-          <textarea id="t-body" placeholder="What should the agent build?"></textarea>
-          <div class="row"><button onclick="addTask()">Add task</button><div style="flex:2"></div></div>
-        </div>
-      </details>
-      <div class="row"><button onclick="run(1)">▶ Run one</button><button class="ghost" onclick="run(3)">▶ Run ×3</button></div>
-    </div>
-  </section>
+<div class="stats" id="stats"></div>
+<section class="card full">
+  <h2>Queue <span id="qc"></span></h2>
+  <div class="toolbar">
+    <input id="search" placeholder="Search issues…" oninput="render()">
+    <select id="f-label" onchange="render()"><option value="">All labels</option></select>
+    <select id="f-status" onchange="render()"><option value="">All status</option><option value="queued">Queued</option><option value="running">Running</option><option value="awaiting">Awaiting</option><option value="done">Done</option></select>
+    <span style="flex:1"></span>
+    <button class="ghost" onclick="toggleNew()">+ New</button>
+    <button onclick="run(1)">▶ Run one</button>
+    <button class="ghost" onclick="run(3)">▶ Run ×3</button>
+  </div>
+  <div id="newtask" class="newtask" style="display:none">
+    <input id="t-name" placeholder="task name (e.g. add-dark-mode)">
+    <input id="t-repo" placeholder="repo (optional — blank = new repo)">
+    <input id="t-labels" placeholder="labels (optional, comma-separated)">
+    <textarea id="t-body" placeholder="What should the agent build?"></textarea>
+    <div class="row"><button onclick="addTask()">Add task</button><span style="flex:3"></span></div>
+  </div>
+  <div id="awaiting"></div>
+  <div id="rows" class="rows"><span class="empty">no tasks</span></div>
+</section>
+<main class="two">
   <section class="card">
     <h2>Agents</h2>
     <div class="body" id="agents"><span class="empty">idle</span></div>
-    <h2 style="border-top:1px solid var(--line)">Done <span id="dc"></span></h2>
-    <div class="body"><div class="done-list" id="done"><span class="empty">nothing shipped yet</span></div></div>
     <h2 style="border-top:1px solid var(--line)">Pull requests</h2>
     <div class="body" id="prs"><span class="empty">none</span></div>
   </section>
@@ -372,21 +424,35 @@ textarea{min-height:70px;resize:vertical}.row{display:flex;gap:8px}.row>*{flex:1
 </main>
 <script>
 const $=s=>document.querySelector(s), esc=t=>(t||"").replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])), q=encodeURIComponent;
+let S={tasks:[],done:[],labels:[],stats:{},agents:[],awaiting:[],prs:[]}, stuck=false;
 function cls(s){s=(s||'').toLowerCase();return s.includes('✓')||s.includes('done')?'done':s.includes('✗')||s.includes('fail')?'fail':s.includes('idle')?'idle':''}
-async function addTask(){const name=$('#t-name').value,repo=$('#t-repo').value,body=$('#t-body').value;
-  if(!body.trim())return; await fetch(`/api/task?name=${q(name)}&repo=${q(repo)}`,{method:'POST',body}); $('#t-name').value=$('#t-body').value='';tick()}
+function toggleNew(){const n=$('#newtask');n.style.display=n.style.display==='none'?'grid':'none'}
+async function addTask(){const name=$('#t-name').value,repo=$('#t-repo').value,labels=$('#t-labels').value,body=$('#t-body').value;
+  if(!body.trim())return; await fetch(`/api/task?name=${q(name)}&repo=${q(repo)}&labels=${q(labels)}`,{method:'POST',body});
+  $('#t-name').value=$('#t-repo').value=$('#t-labels').value=$('#t-body').value='';toggleNew();tick()}
 async function run(p){await fetch(`/api/run?parallel=${p}`,{method:'POST'});tick()}
 async function decide(id,d){await fetch(`/api/approve?id=${q(id)}&decision=${d}`,{method:'POST'});tick()}
-let stuck=false;
+function render(){
+  const term=($('#search').value||'').toLowerCase(), fl=$('#f-label').value, fst=$('#f-status').value;
+  const list=[...(S.tasks||[]), ...(S.done||[]).map(d=>({name:d,repo:'',preview:'',labels:[],status:'done'}))]
+    .filter(t=>!term||`${t.name} ${t.repo} ${t.preview} ${(t.labels||[]).join(' ')}`.toLowerCase().includes(term))
+    .filter(t=>!fl||(t.labels||[]).includes(fl))
+    .filter(t=>!fst||t.status===fst);
+  $('#qc').textContent=list.length||'';
+  $('#rows').innerHTML=list.length?list.map(t=>`<div class="taskrow"><span class="badge-st ${t.status}">${t.status}</span><div class="tr-main"><span class="tr-name">${esc(t.name)}</span>${(t.labels||[]).map(l=>`<span class="chip">${esc(l)}</span>`).join('')}<div class="tr-prev">${esc(t.preview)}</div></div><span class="tr-repo">${t.repo?esc(t.repo):(t.status==='done'?'':'new repo')}</span></div>`).join(''):'<span class="empty">no matching tasks</span>';
+}
 async function tick(){
-  try{const s=await(await fetch('/api/state')).json();stuck=false;$('#pill').textContent='live · '+new Date().toLocaleTimeString(); $('#proj').textContent=s.projects?('▸ '+s.projects):'';
-    $('#qc').textContent=s.pending.length||''; $('#dc').textContent=s.done.length||'';
-    $('#queue').innerHTML=s.pending.length?s.pending.map(t=>`<div class="item"><div class="n">${esc(t.name)}${t.repo?`<span class="tag">${esc(t.repo)}</span>`:'<span class="tag">new repo</span>'}</div><div class="m">${esc(t.preview)}</div></div>`).join(''):'<span class="empty">no pending tasks</span>';
-    $('#awaiting').innerHTML=s.awaiting.map(a=>`<div class="approve"><b>Plan ready · agent ${esc(a.id)}</b><div class="m">${esc(a.plan)}</div><div class="row"><button class="ok" onclick="decide('${esc(a.id)}','approve')">Approve</button><button class="bad" onclick="decide('${esc(a.id)}','reject')">Reject</button></div></div>`).join('');
-    $('#agents').innerHTML=s.agents.length?s.agents.map(a=>`<div class="agent ${cls(a.status)}"><span class="dot"></span><div><div class="n">agent ${esc(a.id)}</div><div class="m">${esc(a.status)||'—'}</div></div></div>`).join(''):'<span class="empty">idle</span>';
-    $('#done').innerHTML=s.done.length?s.done.map(d=>`<span>${esc(d)}</span>`).join(''):'<span class="empty">nothing shipped yet</span>';
-    $('#prs').innerHTML=s.prs.length?s.prs.map(u=>`<a class="pr" href="${esc(u)}" target="_blank">${esc(u.replace('https://github.com/',''))}</a>`).join(''):'<span class="empty">none</span>';
-    $('#lf').textContent=s.logfile; $('#log').textContent=s.log||'—'; const l=$('#log'); l.scrollTop=l.scrollHeight;
+  try{S=await(await fetch('/api/state')).json();stuck=false;
+    $('#pill').textContent='live · '+new Date().toLocaleTimeString(); $('#proj').textContent=S.projects?('▸ '+S.projects):'';
+    const st=S.stats||{}; $('#stats').innerHTML=[['Queued',st.queued],['Running',st.running],['Awaiting',st.awaiting],['Done',st.done],['PRs',st.prs]]
+      .map(([k,v])=>`<div class="tile"><div class="tv">${v||0}</div><div class="tk">${k}</div></div>`).join('');
+    const sel=$('#f-label'), cur=sel.value;
+    sel.innerHTML='<option value="">All labels</option>'+(S.labels||[]).map(l=>`<option${l===cur?' selected':''}>${esc(l)}</option>`).join('');
+    $('#awaiting').innerHTML=(S.awaiting||[]).map(a=>`<div class="approve"><b>PLAN READY · AGENT ${esc(a.id)}</b><div class="m">${esc(a.plan)}</div><div class="row"><button class="ok" onclick="decide('${esc(a.id)}','approve')">Approve</button><button class="bad" onclick="decide('${esc(a.id)}','reject')">Reject</button></div></div>`).join('');
+    $('#agents').innerHTML=(S.agents||[]).length?S.agents.map(a=>`<div class="agent ${cls(a.status)}"><span class="dot"></span><div><div class="n">agent ${esc(a.id)}</div><div class="m">${esc(a.status)||'—'}</div></div></div>`).join(''):'<span class="empty">idle</span>';
+    $('#prs').innerHTML=(S.prs||[]).length?S.prs.map(u=>`<a class="pr" href="${esc(u)}" target="_blank">${esc(u.replace('https://github.com/',''))}</a>`).join(''):'<span class="empty">none</span>';
+    $('#lf').textContent=S.logfile; $('#log').textContent=S.log||'—'; const l=$('#log'); l.scrollTop=l.scrollHeight;
+    render();
   }catch(e){if(!stuck){$('#pill').textContent='disconnected';stuck=true}}
 }
 tick();setInterval(tick,2000);

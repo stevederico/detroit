@@ -1,5 +1,11 @@
 # Changelog
 
+0.51.0
+
+  Verified ship detection
+  PR data via gh
+  Framework emits result
+
 0.50.0
 
   Test gate runs tests

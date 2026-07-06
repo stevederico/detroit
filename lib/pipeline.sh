@@ -5,6 +5,57 @@
 # INT trap and lib/postship.sh read TASK_FILE, REPO_DIR, BRANCH, BASE_BRANCH,
 # MAIN_REPO_DIR, WORKTREE_DIR, HAS_SHIPPED, TASK_BODY, TASK_NAME, TASK_PROMPT.
 
+# verify_shipped — decide HAS_SHIPPED from verified facts, not the agent's
+# FACTORY_RESULT print. Existing repo: commits on the branch AND an open PR
+# for it (gh outage falls back to remote-branch existence with a WARN).
+# New repo: local commits AND a reachable origin remote. Sets HAS_SHIPPED,
+# PR_NUM, PR_URL (empty for new repos — they push straight to default).
+verify_shipped() {
+  HAS_SHIPPED=false
+  PR_NUM=""
+  PR_URL=""
+  local commits pr_json gh_rc=0
+
+  if [ "$IS_NEW_REPO" = true ]; then
+    commits=$(git -C "$REPO_DIR" rev-list --count HEAD 2>/dev/null || echo 0)
+    if [ "${commits:-0}" -gt 0 ] && git -C "$REPO_DIR" ls-remote origin >/dev/null 2>&1; then
+      HAS_SHIPPED=true
+      log "shipped check: new repo pushed ($commits commits)"
+    else
+      log "shipped check: new repo has no pushed remote"
+    fi
+    return 0
+  fi
+
+  commits=$(git -C "$REPO_DIR" rev-list --count "$BASE_BRANCH..$BRANCH" 2>/dev/null || echo 0)
+  if [ "${commits:-0}" -eq 0 ]; then
+    log "shipped check: no commits on $BRANCH"
+    return 0
+  fi
+
+  pr_json=$(cd "$REPO_DIR" && gh pr list --head "$BRANCH" --state open --json number,url 2>/dev/null) || gh_rc=$?
+  if [ "$gh_rc" -ne 0 ]; then
+    # gh unavailable — fall back to remote-branch existence
+    if [ -n "$(git -C "$REPO_DIR" ls-remote --heads origin "$BRANCH" 2>/dev/null)" ]; then
+      log "WARN: gh unavailable — branch is on origin, treating as shipped (no PR metadata)"
+      HAS_SHIPPED=true
+    else
+      log "shipped check: gh unavailable and branch not on origin"
+    fi
+    return 0
+  fi
+
+  PR_NUM=$(echo "$pr_json" | python3 -c "import json,sys; prs=json.loads(sys.stdin.read() or '[]'); print(prs[0]['number'] if prs else '')" 2>/dev/null)
+  PR_URL=$(echo "$pr_json" | python3 -c "import json,sys; prs=json.loads(sys.stdin.read() or '[]'); print(prs[0]['url'] if prs else '')" 2>/dev/null)
+  if [ -n "$PR_NUM" ]; then
+    HAS_SHIPPED=true
+    log "shipped check: $commits commit(s) on $BRANCH, open PR #$PR_NUM"
+    log "PR: $PR_URL"
+  else
+    log "shipped check: $commits commit(s) on $BRANCH but no open PR"
+  fi
+}
+
 run_pipeline() {
 # ── PICK (TRIAGE) ─────────────────────────────────────────
 stage "PICK"
@@ -366,9 +417,9 @@ CODE_END=$(date +%s)
 CODE_ELAPSED=$(( CODE_END - CODE_START ))
 log "Agent session completed in ${CODE_ELAPSED}s"
 
-# Only run downstream gates if code stage actually shipped a PR
-HAS_SHIPPED=false
-grep -q "FACTORY_RESULT:SUCCESS" "$LOGFILE" 2>/dev/null && HAS_SHIPPED=true
+# Only run downstream gates if code stage actually shipped — verified facts
+# (commits + PR/remote), not the agent's FACTORY_RESULT print
+verify_shipped
 
 # ── GATES (dispatch every rule bullet to check_gate) ─────
 # Reads every bullet from the 8 factory.md sections and runs each through
@@ -440,9 +491,9 @@ fi
 # ── SHIP ──────────────────────────────────────────────────
 stage "SHIP"
 update_status "$TASK_NAME — shipping"
-if grep -q "FACTORY_RESULT:SUCCESS" "$LOGFILE" 2>/dev/null; then
-  log "PR shipped on branch $BRANCH"
+if [ "$HAS_SHIPPED" = true ]; then
+  log "PR shipped on branch $BRANCH${PR_URL:+ — $PR_URL}"
 else
-  log "No PR — agent reported failure"
+  log "No PR — nothing verified on branch"
 fi
 }

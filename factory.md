@@ -39,7 +39,7 @@ Fill this template into plan.md; it is the plan the build stage implements.
 - ! CHANGELOG.md updated per PR
 
 ## build
-- node 20
+- node 22
 - gh CLI authenticated
 - CI workflow at `.github/workflows/ci.yml` (auto-generate if missing)
 - ! `package.json` version bumped per PR (minor bump by default)

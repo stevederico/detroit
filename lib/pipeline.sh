@@ -194,9 +194,11 @@ update_status "$TASK_NAME — scaffolding"
 if [ "$IS_NEW_REPO" = false ] && [ ! -d "$REPO_DIR/.github/workflows" ] && [ -f "$REPO_DIR/package.json" ]; then
   log "No CI workflow found — generating .github/workflows/ci.yml"
   mkdir -p "$REPO_DIR/.github/workflows"
-  # Detect runtime and scripts
+  # Detect runtime and scripts; node version comes from factory.md `## build`
+  # (`node NN` bullet) so spec and generated workflow can't disagree
   CI_RUNTIME="node"
-  CI_NODE_VERSION="22"
+  CI_NODE_VERSION=$(factory_section "build" "$DETROIT/factory.md" | sed -nE 's/^[-*+[:space:]]*node[[:space:]]+([0-9]+).*/\1/p' | head -1)
+  CI_NODE_VERSION="${CI_NODE_VERSION:-22}"
   if [ -f "$REPO_DIR/deno.json" ] || [ -f "$REPO_DIR/deno.jsonc" ]; then
     CI_RUNTIME="deno"
   fi

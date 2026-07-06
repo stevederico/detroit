@@ -47,15 +47,61 @@ assert_rc 0 "bumped version passes" check_gate "package.json version bumped per 
 PRE_VERSION=""
 assert_rc 0 "no PRE_VERSION skips" check_gate "package.json version bumped per PR"
 
-echo "tests-pass gate (current log-grep behavior):"
+echo "tests-pass gate (deterministic):"
 fresh_repo t1
-echo "2 tests FAIL" > "$LOGFILE"
-assert_rc 1 "FAIL in log without marker fails" check_gate "All tests must pass before a PR is opened"
-echo "FACTORY_RESULT:SUCCESS" >> "$LOGFILE"
-assert_rc 0 "success marker short-circuits" check_gate "All tests must pass before a PR is opened"
-echo "all green" > "$LOGFILE"
-assert_rc 0 "clean log passes" check_gate "All tests must pass before a PR is opened"
-: > "$LOGFILE"
+DETROIT_TEST_CMD="exit 0"
+assert_rc 0 "passing test command passes" check_gate "All tests must pass before a PR is opened"
+DETROIT_TEST_CMD="exit 1"
+assert_rc 1 "failing test command fails" check_gate "All tests must pass before a PR is opened"
+DETROIT_TEST_CMD="sleep 30"
+DETROIT_TEST_TIMEOUT=2
+assert_rc 1 "hung test command times out" check_gate "All tests must pass before a PR is opened"
+unset DETROIT_TEST_CMD DETROIT_TEST_TIMEOUT
+assert_rc 0 "no package.json → skip-pass" check_gate "All tests must pass before a PR is opened"
+add_commit "$REPO_DIR" "package.json" '{"scripts": {"test": "echo \"Error: no test specified\" && exit 1"}}'
+assert_rc 0 "npm placeholder script → skip-pass" check_gate "All tests must pass before a PR is opened"
+if command -v npm >/dev/null 2>&1; then
+  fresh_repo t2
+  add_commit "$REPO_DIR" "package.json" '{"name":"t2","version":"1.0.0","scripts":{"test":"node -e \"process.exit(0)\""}}'
+  assert_rc 0 "real npm test run passes" check_gate "All tests must pass before a PR is opened"
+fi
+
+echo "test failure output threading:"
+fresh_repo t3
+GATE_FAILURES=""; GATE_CUSTOM=""; GATE_SEEN=""
+DETROIT_TEST_CMD="echo boom-notice; exit 1"
+run_gate_bullets < <(printf '%s\n' "- ! All tests must pass before a PR is opened")
+unset DETROIT_TEST_CMD
+assert_contains "$GATE_FAILURES" "boom-notice" "failing test output threaded into GATE_FAILURES"
+
+echo "secret content scan:"
+# Secret-shaped fixtures are concatenated so this test file never contains one itself
+AWS_FAKE="AKIA""BCDEFGHIJKLMNOPQ"
+GH_FAKE="ghp_""ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij"
+PEM_FAKE="-----BEGIN RSA"" PRIVATE KEY-----"
+PW_FAKE='const pass''word = "supersecretvalue99"'
+fresh_repo sc1
+add_commit "$REPO_DIR" "config.js" "const key = '$AWS_FAKE'"
+assert_rc 1 "AWS key in diff content fails secret gate" check_gate "No secrets in committed files"
+assert_rc 1 "AWS key fails credential gate too" check_gate "No hardcoded api key values"
+fresh_repo sc2
+add_commit "$REPO_DIR" "auth.js" "token = '$GH_FAKE'"
+assert_rc 1 "GitHub token in diff fails" check_gate "No hardcoded api key values"
+fresh_repo sc3
+add_commit "$REPO_DIR" "deploy.txt" "$PEM_FAKE"
+assert_rc 1 "PEM header in diff fails" check_gate "No hardcoded api key values"
+fresh_repo sc4
+add_commit "$REPO_DIR" "login.js" "$PW_FAKE"
+assert_rc 1 "quoted password assignment fails" check_gate "No hardcoded api key values"
+fresh_repo sc5
+add_commit "$REPO_DIR" "package-lock.json" "{\"integrity\": \"sha512-$AWS_FAKE\"}"
+assert_rc 0 "lockfile content excluded from scan" check_gate "No secrets in committed files"
+fresh_repo sc6
+add_commit "$REPO_DIR" "README.md" "rotate your api key regularly"
+assert_rc 0 "prose about keys passes" check_gate "No hardcoded api key values"
+fresh_repo sc7
+add_commit "$REPO_DIR" "config.envelope.js" "export const x = 1"
+assert_rc 0 "config.envelope.js not flagged by .env filename check" check_gate "No secrets in committed files"
 
 echo "500-line gate:"
 fresh_repo big1

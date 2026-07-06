@@ -339,29 +339,30 @@ fn main() {
 const PAGE: &str = r##"<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>detroit — factory floor</title>
 <style>
-:root{--bg:#000000;--panel:#0a0a0a;--line:#333333;--ink:#ffffff;--mut:#7d8187;--acc:#ff6308;--ok:#3fb950;--bad:#f85149;--run:#ff6308}
+:root{--bg:#000000;--panel:#101216;--field:#0a0c0f;--line:#4a515b;--ink:#ffffff;--mut:#9aa4af;--acc:#ff6308;--ok:#3fb950;--bad:#f85149;--run:#ff6308}
+:root.light{--bg:#f3f4f6;--panel:#ffffff;--field:#ffffff;--line:#c2c8d0;--ink:#0a0c0f;--mut:#57606a;--acc:#ff6308;--ok:#1a7f37;--bad:#cf222e;--run:#ff6308}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 'Geist Mono',ui-monospace,SFMono-Regular,Menlo,monospace}
 header{display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:5}
 header h1{font-size:16px;margin:0;letter-spacing:.14em;text-transform:uppercase;font-weight:400}header .badge{background:var(--acc);color:#000000;font-weight:700;padding:2px 8px;border-radius:0;font-size:11px;letter-spacing:.1em}
 header .pill{margin-left:auto;color:var(--mut);font-size:12px}
-header .proj{color:var(--mut);font-size:12px;background:#050505;border:1px solid var(--line);border-radius:0;padding:2px 8px}
+header .proj{color:var(--mut);font-size:12px;background:var(--field);border:1px solid var(--line);border-radius:0;padding:2px 8px}
 main{display:grid;grid-template-columns:1.1fr 1fr 1.4fr;gap:14px;padding:16px;align-items:start}
 @media(max-width:900px){main{grid-template-columns:1fr}}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:0;overflow:hidden}
 .card>h2{margin:0;padding:10px 14px;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--mut);border-bottom:1px solid var(--line);display:flex;justify-content:space-between}
 .card .body{padding:12px 14px;display:flex;flex-direction:column;gap:10px}
-.item{border:1px solid var(--line);border-radius:0;padding:9px 11px;background:#0a0a0a}
+.item{border:1px solid var(--line);border-radius:0;padding:9px 11px;background:var(--field)}
 .item .n{font-weight:600}.item .m{color:var(--mut);font-size:12px}.tag{font-size:10px;color:var(--acc);border:1px solid var(--line);border-radius:0;padding:1px 6px;margin-left:6px}
 .agent{display:flex;align-items:center;gap:9px}.dot{width:9px;height:9px;border-radius:50%;background:var(--run);flex:none;box-shadow:0 0 8px var(--run)}
 .agent.done .dot{background:var(--ok);box-shadow:0 0 8px var(--ok)}.agent.fail .dot{background:var(--bad);box-shadow:0 0 8px var(--bad)}.agent.idle .dot{background:var(--mut);box-shadow:none}
-pre.log{margin:0;padding:12px 14px;background:#050505;max-height:60vh;overflow:auto;font-size:12px;color:#c9d4de;white-space:pre-wrap;word-break:break-word}
+pre.log{margin:0;padding:12px 14px;background:var(--field);max-height:60vh;overflow:auto;font-size:12px;color:var(--ink);white-space:pre-wrap;word-break:break-word}
 .done-list{display:flex;flex-wrap:wrap;gap:6px}.done-list span{font-size:11px;color:var(--mut);border:1px solid var(--line);border-radius:0;padding:2px 7px}
 a{color:var(--acc)}a.pr{display:block;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 button{font:inherit;background:var(--acc);color:#000000;border:0;border-radius:0;padding:7px 12px;font-weight:600;cursor:pointer;text-transform:uppercase;letter-spacing:.08em}
 button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}button.bad{background:var(--bad);color:#fff}button.ok{background:var(--ok);color:#fff}
-input,textarea{width:100%;background:#050505;border:1px solid var(--line);border-radius:0;color:var(--ink);padding:8px;font:inherit}
+input,textarea{width:100%;background:var(--field);border:1px solid var(--line);border-radius:0;color:var(--ink);padding:8px;font:inherit}
 textarea{min-height:70px;resize:vertical}.row{display:flex;gap:8px}.row>*{flex:1}
-.approve{border:1px solid var(--acc);border-radius:0;padding:10px;background:#1a1408}.approve .m{max-height:120px;overflow:auto;white-space:pre-wrap;font-size:11px;color:var(--mut);margin:6px 0}
+.approve{border:1px solid var(--acc);border-radius:0;padding:10px;background:var(--panel)}.approve .m{max-height:120px;overflow:auto;white-space:pre-wrap;font-size:11px;color:var(--mut);margin:6px 0}
 .empty{color:var(--mut);font-size:12px;font-style:italic}
 .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;padding:16px 16px 0}
 @media(max-width:760px){.stats{grid-template-columns:repeat(2,1fr)}}
@@ -372,7 +373,7 @@ textarea{min-height:70px;resize:vertical}.row{display:flex;gap:8px}.row>*{flex:1
 main.two{grid-template-columns:1fr 1.4fr}
 @media(max-width:900px){main.two{grid-template-columns:1fr}}
 .toolbar{display:flex;gap:8px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
-.toolbar input,.toolbar select{width:auto;flex:0 0 auto;background:#050505;border:1px solid var(--line);color:var(--ink);padding:6px 8px;font:inherit}
+.toolbar input,.toolbar select{width:auto;flex:0 0 auto;background:var(--field);border:1px solid var(--line);color:var(--ink);padding:6px 8px;font:inherit}
 .toolbar input#search{flex:1 1 220px}
 .newtask{display:grid;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line)}
 .rows{display:flex;flex-direction:column}
@@ -386,8 +387,10 @@ main.two{grid-template-columns:1fr 1.4fr}
 .badge-st.running{color:#000;background:var(--acc);border-color:var(--acc)}
 .badge-st.awaiting{color:#000;background:#f0b429;border-color:#f0b429}
 .badge-st.done{color:var(--ok);border-color:var(--ok)}
-</style></head><body>
-<header><span class="badge">DETROIT</span><h1>factory floor</h1><code class="proj" id="proj" title="projects folder — where the factory runs"></code><span class="pill" id="pill">connecting…</span></header>
+.tbtn{margin-left:12px;background:transparent;color:var(--ink);border:1px solid var(--line);padding:4px 9px;cursor:pointer;font-size:13px;line-height:1}
+.tbtn:hover{border-color:var(--acc);color:var(--acc)}
+</style><script>(function(){try{if(localStorage.getItem('detroit-theme')==='light')document.documentElement.classList.add('light')}catch(e){}})()</script></head><body>
+<header><span class="badge">DETROIT</span><h1>factory floor</h1><code class="proj" id="proj" title="projects folder — where the factory runs"></code><span class="pill" id="pill">connecting…</span><button class="tbtn" id="themebtn" onclick="toggleTheme()" title="Toggle light / dark">☀</button></header>
 <div class="stats" id="stats"></div>
 <section class="card full">
   <h2>Queue <span id="qc"></span></h2>
@@ -455,5 +458,7 @@ async function tick(){
     render();
   }catch(e){if(!stuck){$('#pill').textContent='disconnected';stuck=true}}
 }
-tick();setInterval(tick,2000);
+function themeIcon(){$('#themebtn').textContent=document.documentElement.classList.contains('light')?'☾':'☀'}
+function toggleTheme(){const l=document.documentElement.classList.toggle('light');try{localStorage.setItem('detroit-theme',l?'light':'dark')}catch(e){}themeIcon()}
+themeIcon();tick();setInterval(tick,2000);
 </script></body></html>"##;

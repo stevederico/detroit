@@ -364,14 +364,11 @@ input,textarea{width:100%;background:var(--field);border:1px solid var(--line);b
 textarea{min-height:70px;resize:vertical}.row{display:flex;gap:8px}.row>*{flex:1}
 .approve{border:1px solid var(--acc);border-radius:0;padding:10px;background:var(--panel)}.approve .m{max-height:120px;overflow:auto;white-space:pre-wrap;font-size:11px;color:var(--mut);margin:6px 0}
 .empty{color:var(--mut);font-size:12px;font-style:italic}
-.stages{display:flex;gap:0;padding:16px 16px 0;flex-wrap:wrap}
-.stg{flex:1;min-width:110px;display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);padding:12px 14px}
-.stg+.stg{border-left:0}
-.stg .si{font-size:22px;font-weight:600;color:var(--mut);font-family:'Geist Mono',ui-monospace,monospace;line-height:1;min-width:20px;text-align:center}
-.stg .sn{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--mut)}
-.stg.on{background:var(--acc);border-color:var(--acc)}
-.stg.on .si,.stg.on .sn{color:#000}
-@media(max-width:760px){.stg{min-width:33%}.stg+.stg{border-left:1px solid var(--line)}}
+.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;padding:16px 16px 0}
+@media(max-width:760px){.stats{grid-template-columns:repeat(2,1fr)}}
+.tile{background:var(--panel);border:1px solid var(--line);padding:12px 14px}
+.tile .tv{font-size:26px;font-weight:600;color:var(--acc);font-family:'Geist Mono',ui-monospace,monospace;line-height:1}
+.tile .tk{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--mut);margin-top:6px}
 .full{margin:14px 16px 0}
 main.two{grid-template-columns:1fr 1.4fr}
 @media(max-width:900px){main.two{grid-template-columns:1fr}}
@@ -394,7 +391,7 @@ main.two{grid-template-columns:1fr 1.4fr}
 .tbtn:hover{border-color:var(--acc);color:var(--acc)}
 </style><script>(function(){try{if(localStorage.getItem('detroit-theme')==='light')document.documentElement.classList.add('light')}catch(e){}})()</script></head><body>
 <header><span class="badge">DETROIT</span><h1>factory floor</h1><code class="proj" id="proj" title="projects folder — where the factory runs"></code><span class="pill" id="pill">connecting…</span><button class="tbtn" id="themebtn" onclick="toggleTheme()" title="Toggle light / dark">☀</button></header>
-<div class="stages" id="stages"></div>
+<div class="stats" id="stats"></div>
 <section class="card full">
   <h2>Queue <span id="qc"></span></h2>
   <div class="toolbar">
@@ -454,13 +451,14 @@ function render(){
     .filter(t=>!fl||(t.labels||[]).includes(fl))
     .filter(t=>!fst||t.status===fst);
   $('#qc').textContent=list.length||'';
-  $('#rows').innerHTML=list.length?list.map(t=>`<div class="taskrow"><span class="badge-st ${t.status}">${t.status}</span><div class="tr-main"><span class="tr-name">${esc(t.name)}</span>${(t.labels||[]).map(l=>`<span class="chip">${esc(l)}</span>`).join('')}<div class="tr-prev">${esc(t.preview)}</div></div><span class="tr-repo">${t.repo?esc(t.repo):(t.status==='done'?'':'new repo')}</span></div>`).join(''):'<span class="empty">no matching tasks</span>';
+  const badgeText=t=>{ if(t.status==='running'||t.status==='awaiting'){ const a=(S.agents||[]).find(a=>(a.status||'').includes(t.name)); const i=a?stageIdx(a.status):-1; if(i>=0)return STAGES[i]; } return t.status; };
+  $('#rows').innerHTML=list.length?list.map(t=>`<div class="taskrow"><span class="badge-st ${t.status}">${badgeText(t)}</span><div class="tr-main"><span class="tr-name">${esc(t.name)}</span>${(t.labels||[]).map(l=>`<span class="chip">${esc(l)}</span>`).join('')}<div class="tr-prev">${esc(t.preview)}</div></div><span class="tr-repo">${t.repo?esc(t.repo):(t.status==='done'?'':'new repo')}</span></div>`).join(''):'<span class="empty">no matching tasks</span>';
 }
 async function tick(){
   try{S=await(await fetch('/api/state')).json();stuck=false;
     $('#pill').textContent='live · '+new Date().toLocaleTimeString(); $('#proj').textContent=S.projects?('▸ '+S.projects):'';
-    const counts=[0,0,0,0,0,0]; (S.agents||[]).forEach(a=>{const i=stageIdx(a.status); if(i>=0)counts[i]++});
-    $('#stages').innerHTML=STAGES.map((n,i)=>`<div class="stg${counts[i]?' on':''}"><span class="si">${counts[i]||'·'}</span><span class="sn">${n}</span></div>`).join('');
+    const st=S.stats||{}; $('#stats').innerHTML=[['Queued',st.queued],['Running',st.running],['Awaiting',st.awaiting],['Done',st.done],['PRs',st.prs]]
+      .map(([k,v])=>`<div class="tile"><div class="tv">${v||0}</div><div class="tk">${k}</div></div>`).join('');
     const sel=$('#f-label'), cur=sel.value;
     sel.innerHTML='<option value="">All labels</option>'+(S.labels||[]).map(l=>`<option${l===cur?' selected':''}>${esc(l)}</option>`).join('');
     $('#awaiting').innerHTML=(S.awaiting||[]).map(a=>`<div class="approve"><b>PLAN READY · AGENT ${esc(a.id)}</b><div class="m">${esc(a.plan)}</div><div class="row"><button class="ok" onclick="decide('${esc(a.id)}','approve')">Approve</button><button class="bad" onclick="decide('${esc(a.id)}','reject')">Reject</button></div></div>`).join('');

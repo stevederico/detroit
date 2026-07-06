@@ -5,10 +5,10 @@
 
 run_postship() {
 # ── CI GATE (watch GitHub Actions, fix failures) ─────────
-if grep -q "FACTORY_RESULT:SUCCESS" "$LOGFILE" 2>/dev/null; then
+if [ "$HAS_SHIPPED" = true ]; then
   stage "CI"
   update_status "$TASK_NAME — watching CI"
-  PR_NUM_CI=$(grep -o 'https://github.com/[^ ]*pull/[0-9]*' "$LOGFILE" | tail -1 | grep -o '[0-9]*$')
+  PR_NUM_CI="$PR_NUM"  # set by verify_shipped (gh pr list, not log scraping)
   GH_OWNER_CI=$(gh api user --jq '.login' 2>/dev/null)
 
   if [ -n "$PR_NUM_CI" ]; then
@@ -87,10 +87,10 @@ CI_FIX_EOF
 fi
 
 # ── VERIFY (self-verification loop) ───────────────────────
-if grep -q "FACTORY_RESULT:SUCCESS" "$LOGFILE" 2>/dev/null && command -v agent-browser &>/dev/null; then
+if [ "$HAS_SHIPPED" = true ] && command -v agent-browser &>/dev/null; then
   stage "VERIFY"
   update_status "$TASK_NAME — verifying"
-  PR_NUM=$(grep -o 'https://github.com/[^ ]*pull/[0-9]*' "$LOGFILE" | tail -1 | grep -o '[0-9]*$')
+  # PR_NUM already set by verify_shipped
   SCREENSHOT_DIR="$LOGDIR/screenshots/$TASK_NAME"
   mkdir -p "$SCREENSHOT_DIR"
 
@@ -274,13 +274,12 @@ fi
 
 # ── UPDATE ────────────────────────────────────────────────
 stage "UPDATE"
-if grep -q "FACTORY_RESULT:SUCCESS" "$LOGFILE" 2>/dev/null; then
+if [ "$HAS_SHIPPED" = true ]; then
   # If task came from a GitHub issue, comment the PR link and close it
   ISSUE_REF=$(echo "$TASK_BODY" | sed -n '/^---$/,/^---$/p' | grep '^issue:' | sed 's/^issue: *//')
   if [ -n "$ISSUE_REF" ]; then
     ISSUE_REPO=$(echo "$ISSUE_REF" | cut -d'#' -f1)
     ISSUE_NUM=$(echo "$ISSUE_REF" | cut -d'#' -f2)
-    PR_URL=$(grep -o 'https://github.com/[^ ]*pull/[0-9]*' "$LOGFILE" | tail -1)
     gh issue comment "$ISSUE_NUM" --repo "$ISSUE_REPO" --body "Shipped in ${PR_URL:-branch $BRANCH}" 2>&1 | ptee
     gh issue close "$ISSUE_NUM" --repo "$ISSUE_REPO" 2>&1 | ptee
     log "Closed issue: $ISSUE_REF"
@@ -297,10 +296,15 @@ fi
 
 # ── DONE ──────────────────────────────────────────────────
 stage "DONE"
-if grep -q "FACTORY_RESULT:SUCCESS" "$LOGFILE" 2>/dev/null; then
+# The framework emits the definitive FACTORY_RESULT line (derived from
+# verify_shipped) — a stable grep target for humans and scripts tailing logs.
+# The agent's own step-17 print remains a breadcrumb; nothing trusts it.
+if [ "$HAS_SHIPPED" = true ]; then
+  log "FACTORY_RESULT:SUCCESS"
   log "Factory run successful"
   update_status "$TASK_NAME ✓ done"
 else
+  log "FACTORY_RESULT:FAILED"
   log "Factory run failed — check log: $LOGFILE"
   update_status "$TASK_NAME ✗ failed"
 fi
@@ -315,6 +319,6 @@ if [ -n "$TASK_FILE" ]; then
   rm -rf "$LOCK_DIR/$(basename "$TASK_FILE").lock" 2>/dev/null
 fi
 
-# Exit based on factory result
-grep -q "FACTORY_RESULT:SUCCESS" "$LOGFILE" 2>/dev/null
+# Exit based on verified factory result
+[ "$HAS_SHIPPED" = true ]
 }

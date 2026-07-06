@@ -314,29 +314,29 @@ fn main() {
 const PAGE: &str = r##"<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>detroit — factory floor</title>
 <style>
-:root{--bg:#0e1116;--panel:#161b22;--line:#232a33;--ink:#e6edf3;--mut:#8b98a5;--acc:#f2a900;--ok:#2ea043;--bad:#e5534b;--run:#3a6ea5}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
+:root{--bg:#000000;--panel:#0a0a0a;--line:#333333;--ink:#ffffff;--mut:#7d8187;--acc:#ff6308;--ok:#3fb950;--bad:#f85149;--run:#ff6308}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 'Geist Mono',ui-monospace,SFMono-Regular,Menlo,monospace}
 header{display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:5}
-header h1{font-size:16px;margin:0;letter-spacing:.5px}header .badge{background:var(--acc);color:#3a2a00;font-weight:700;padding:2px 8px;border-radius:5px;font-size:11px;letter-spacing:.1em}
+header h1{font-size:16px;margin:0;letter-spacing:.14em;text-transform:uppercase;font-weight:400}header .badge{background:var(--acc);color:#000000;font-weight:700;padding:2px 8px;border-radius:0;font-size:11px;letter-spacing:.1em}
 header .pill{margin-left:auto;color:var(--mut);font-size:12px}
-header .proj{color:var(--mut);font-size:12px;background:#0b0e13;border:1px solid var(--line);border-radius:5px;padding:2px 8px}
+header .proj{color:var(--mut);font-size:12px;background:#050505;border:1px solid var(--line);border-radius:0;padding:2px 8px}
 main{display:grid;grid-template-columns:1.1fr 1fr 1.4fr;gap:14px;padding:16px;align-items:start}
 @media(max-width:900px){main{grid-template-columns:1fr}}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:0;overflow:hidden}
 .card>h2{margin:0;padding:10px 14px;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--mut);border-bottom:1px solid var(--line);display:flex;justify-content:space-between}
 .card .body{padding:12px 14px;display:flex;flex-direction:column;gap:10px}
-.item{border:1px solid var(--line);border-radius:8px;padding:9px 11px;background:#0f141b}
-.item .n{font-weight:600}.item .m{color:var(--mut);font-size:12px}.tag{font-size:10px;color:var(--acc);border:1px solid var(--line);border-radius:4px;padding:1px 6px;margin-left:6px}
+.item{border:1px solid var(--line);border-radius:0;padding:9px 11px;background:#0a0a0a}
+.item .n{font-weight:600}.item .m{color:var(--mut);font-size:12px}.tag{font-size:10px;color:var(--acc);border:1px solid var(--line);border-radius:0;padding:1px 6px;margin-left:6px}
 .agent{display:flex;align-items:center;gap:9px}.dot{width:9px;height:9px;border-radius:50%;background:var(--run);flex:none;box-shadow:0 0 8px var(--run)}
 .agent.done .dot{background:var(--ok);box-shadow:0 0 8px var(--ok)}.agent.fail .dot{background:var(--bad);box-shadow:0 0 8px var(--bad)}.agent.idle .dot{background:var(--mut);box-shadow:none}
-pre.log{margin:0;padding:12px 14px;background:#0b0e13;max-height:60vh;overflow:auto;font-size:12px;color:#c9d4de;white-space:pre-wrap;word-break:break-word}
-.done-list{display:flex;flex-wrap:wrap;gap:6px}.done-list span{font-size:11px;color:var(--mut);border:1px solid var(--line);border-radius:4px;padding:2px 7px}
+pre.log{margin:0;padding:12px 14px;background:#050505;max-height:60vh;overflow:auto;font-size:12px;color:#c9d4de;white-space:pre-wrap;word-break:break-word}
+.done-list{display:flex;flex-wrap:wrap;gap:6px}.done-list span{font-size:11px;color:var(--mut);border:1px solid var(--line);border-radius:0;padding:2px 7px}
 a{color:var(--acc)}a.pr{display:block;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-button{font:inherit;background:var(--acc);color:#3a2a00;border:0;border-radius:6px;padding:7px 12px;font-weight:700;cursor:pointer}
+button{font:inherit;background:var(--acc);color:#000000;border:0;border-radius:0;padding:7px 12px;font-weight:600;cursor:pointer;text-transform:uppercase;letter-spacing:.08em}
 button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}button.bad{background:var(--bad);color:#fff}button.ok{background:var(--ok);color:#fff}
-input,textarea{width:100%;background:#0b0e13;border:1px solid var(--line);border-radius:6px;color:var(--ink);padding:8px;font:inherit}
+input,textarea{width:100%;background:#050505;border:1px solid var(--line);border-radius:0;color:var(--ink);padding:8px;font:inherit}
 textarea{min-height:70px;resize:vertical}.row{display:flex;gap:8px}.row>*{flex:1}
-.approve{border:1px solid var(--acc);border-radius:8px;padding:10px;background:#1a1408}.approve .m{max-height:120px;overflow:auto;white-space:pre-wrap;font-size:11px;color:var(--mut);margin:6px 0}
+.approve{border:1px solid var(--acc);border-radius:0;padding:10px;background:#1a1408}.approve .m{max-height:120px;overflow:auto;white-space:pre-wrap;font-size:11px;color:var(--mut);margin:6px 0}
 .empty{color:var(--mut);font-size:12px;font-style:italic}
 </style></head><body>
 <header><span class="badge">DETROIT</span><h1>factory floor</h1><code class="proj" id="proj" title="projects folder — where the factory runs"></code><span class="pill" id="pill">connecting…</span></header>

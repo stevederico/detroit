@@ -117,7 +117,7 @@ Steps:
 1. Go directly to: agent-browser open $TARGET_URL
 2. Wait: agent-browser wait --load networkidle
 3. Snapshot: agent-browser snapshot -i
-   If login page: sign in with test@detroit.dev / detroit123, then go to $TARGET_URL
+   If login page: sign in with $TEST_EMAIL / $TEST_PASSWORD, then go to $TARGET_URL
 4. Take a screenshot: agent-browser screenshot $SCREENSHOT_DIR/description.png
    You MUST take at least one screenshot.
 5. Print VERIFY_DONE"

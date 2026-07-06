@@ -1,5 +1,9 @@
 # Changelog
 
+0.42.0
+  Brutalist theme for the web UI
+  Zero radius, orange accent, mono uppercase
+
 0.41.0
   Local web UI (web.rs, std-only Rust)
   Monitor floor, create tasks, trigger runs

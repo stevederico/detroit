@@ -364,11 +364,14 @@ input,textarea{width:100%;background:var(--field);border:1px solid var(--line);b
 textarea{min-height:70px;resize:vertical}.row{display:flex;gap:8px}.row>*{flex:1}
 .approve{border:1px solid var(--acc);border-radius:0;padding:10px;background:var(--panel)}.approve .m{max-height:120px;overflow:auto;white-space:pre-wrap;font-size:11px;color:var(--mut);margin:6px 0}
 .empty{color:var(--mut);font-size:12px;font-style:italic}
-.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;padding:16px 16px 0}
-@media(max-width:760px){.stats{grid-template-columns:repeat(2,1fr)}}
-.tile{background:var(--panel);border:1px solid var(--line);padding:12px 14px}
-.tile .tv{font-size:26px;font-weight:600;color:var(--acc);font-family:'Geist Mono',ui-monospace,monospace;line-height:1}
-.tile .tk{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--mut);margin-top:6px}
+.stages{display:flex;gap:0;padding:16px 16px 0;flex-wrap:wrap}
+.stg{flex:1;min-width:110px;display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);padding:12px 14px}
+.stg+.stg{border-left:0}
+.stg .si{font-size:22px;font-weight:600;color:var(--mut);font-family:'Geist Mono',ui-monospace,monospace;line-height:1;min-width:20px;text-align:center}
+.stg .sn{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--mut)}
+.stg.on{background:var(--acc);border-color:var(--acc)}
+.stg.on .si,.stg.on .sn{color:#000}
+@media(max-width:760px){.stg{min-width:33%}.stg+.stg{border-left:1px solid var(--line)}}
 .full{margin:14px 16px 0}
 main.two{grid-template-columns:1fr 1.4fr}
 @media(max-width:900px){main.two{grid-template-columns:1fr}}
@@ -391,7 +394,7 @@ main.two{grid-template-columns:1fr 1.4fr}
 .tbtn:hover{border-color:var(--acc);color:var(--acc)}
 </style><script>(function(){try{if(localStorage.getItem('detroit-theme')==='light')document.documentElement.classList.add('light')}catch(e){}})()</script></head><body>
 <header><span class="badge">DETROIT</span><h1>factory floor</h1><code class="proj" id="proj" title="projects folder — where the factory runs"></code><span class="pill" id="pill">connecting…</span><button class="tbtn" id="themebtn" onclick="toggleTheme()" title="Toggle light / dark">☀</button></header>
-<div class="stats" id="stats"></div>
+<div class="stages" id="stages"></div>
 <section class="card full">
   <h2>Queue <span id="qc"></span></h2>
   <div class="toolbar">
@@ -428,6 +431,15 @@ main.two{grid-template-columns:1fr 1.4fr}
 <script>
 const $=s=>document.querySelector(s), esc=t=>(t||"").replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])), q=encodeURIComponent;
 let S={tasks:[],done:[],labels:[],stats:{},agents:[],awaiting:[],prs:[]}, stuck=false;
+const STAGES=['triage','plan','build','test','ship','verify'];
+function stageIdx(s){s=(s||'').toLowerCase();
+  if(/verif|screenshot/.test(s))return 5;
+  if(/ship|pull request|\bpr\b|\bci\b|open/.test(s))return 4;
+  if(/gate|test|fix|check/.test(s))return 3;
+  if(/prepar|scaffold|cod|build|implement|branch|worktree/.test(s))return 2;
+  if(/plan/.test(s))return 1;
+  if(/pick|rout|triage/.test(s))return 0;
+  return -1;}
 function cls(s){s=(s||'').toLowerCase();return s.includes('✓')||s.includes('done')?'done':s.includes('✗')||s.includes('fail')?'fail':s.includes('idle')?'idle':''}
 function toggleNew(){const n=$('#newtask');n.style.display=n.style.display==='none'?'grid':'none'}
 async function addTask(){const name=$('#t-name').value,repo=$('#t-repo').value,labels=$('#t-labels').value,body=$('#t-body').value;
@@ -447,8 +459,8 @@ function render(){
 async function tick(){
   try{S=await(await fetch('/api/state')).json();stuck=false;
     $('#pill').textContent='live · '+new Date().toLocaleTimeString(); $('#proj').textContent=S.projects?('▸ '+S.projects):'';
-    const st=S.stats||{}; $('#stats').innerHTML=[['Queued',st.queued],['Running',st.running],['Awaiting',st.awaiting],['Done',st.done],['PRs',st.prs]]
-      .map(([k,v])=>`<div class="tile"><div class="tv">${v||0}</div><div class="tk">${k}</div></div>`).join('');
+    const counts=[0,0,0,0,0,0]; (S.agents||[]).forEach(a=>{const i=stageIdx(a.status); if(i>=0)counts[i]++});
+    $('#stages').innerHTML=STAGES.map((n,i)=>`<div class="stg${counts[i]?' on':''}"><span class="si">${counts[i]||'·'}</span><span class="sn">${n}</span></div>`).join('');
     const sel=$('#f-label'), cur=sel.value;
     sel.innerHTML='<option value="">All labels</option>'+(S.labels||[]).map(l=>`<option${l===cur?' selected':''}>${esc(l)}</option>`).join('');
     $('#awaiting').innerHTML=(S.awaiting||[]).map(a=>`<div class="approve"><b>PLAN READY · AGENT ${esc(a.id)}</b><div class="m">${esc(a.plan)}</div><div class="row"><button class="ok" onclick="decide('${esc(a.id)}','approve')">Approve</button><button class="bad" onclick="decide('${esc(a.id)}','reject')">Reject</button></div></div>`).join('');

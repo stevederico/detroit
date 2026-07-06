@@ -1,5 +1,10 @@
 # Changelog
 
+0.45.0
+  Pipeline stage rail
+  Six stages up top
+  Active stage highlighted
+
 0.44.0
   Light/dark theme toggle (top right)
   Higher-contrast dark mode

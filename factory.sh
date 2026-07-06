@@ -1012,7 +1012,24 @@ PLAN_EOF
     if [ -f "$REPO_DIR/plan.md" ]; then
       PLAN_DOC=$(cat "$REPO_DIR/plan.md")
       log "Plan written: $REPO_DIR/plan.md"
-      if [ "${DETROIT_APPROVE_PLAN:-0}" = "1" ]; then
+      if [ "${DETROIT_APPROVE_PLAN:-0}" = "web" ]; then
+        # File-based gate for the web UI: publish a request, poll for the verdict.
+        stage "APPROVE"
+        log "Review $REPO_DIR/plan.md — awaiting web approval"
+        req="$STATUS_DIR/approve-request-$AGENT_ID"
+        ans="$STATUS_DIR/approve-$AGENT_ID"
+        rm -f "$ans"
+        echo "$REPO_DIR/plan.md" > "$req"
+        update_status "$TASK_NAME — awaiting plan approval"
+        waited=0
+        while [ ! -f "$ans" ] && [ "$waited" -lt 1800 ]; do sleep 2; waited=$((waited + 2)); done
+        _approve=$(cat "$ans" 2>/dev/null || echo n)
+        rm -f "$ans" "$req"
+        case "$_approve" in
+          y|Y|yes|YES) log "Plan approved (web)" ;;
+          *) log "Plan rejected — aborting task"; cleanup; exit 0 ;;
+        esac
+      elif [ "${DETROIT_APPROVE_PLAN:-0}" = "1" ]; then
         stage "APPROVE"
         log "Review $REPO_DIR/plan.md"
         printf 'Approve plan and continue? [y/N] '

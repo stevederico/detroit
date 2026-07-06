@@ -3,6 +3,72 @@
 # check_gate reads outer-scope: BASE_BRANCH, BRANCH, REPO_DIR, PRE_VERSION, LOGFILE.
 # run_gate_bullets / run_all_gates accumulate into GATE_FAILURES, GATE_CUSTOM, GATE_SEEN.
 
+# run_repo_tests — deterministically run the target repo's tests in $REPO_DIR.
+# Command resolution: DETROIT_TEST_CMD env override > package.json scripts.test
+# (npm test) > skip-pass. The npm init placeholder ("no test specified") also
+# skip-passes. Installs node_modules first if missing (worktrees start bare).
+# Runs under with_timeout (DETROIT_TEST_TIMEOUT, default 300s). Full output goes
+# to $LOGFILE; on failure the tail lands in TEST_GATE_OUTPUT for the FIX prompt.
+# Returns 0 on pass/skip, 1 on failure or timeout.
+run_repo_tests() {
+  TEST_GATE_OUTPUT=""
+  local cmd="" script out rc=0
+  local timeout_secs="${DETROIT_TEST_TIMEOUT:-300}"
+  if [ -n "${DETROIT_TEST_CMD:-}" ]; then
+    cmd="$DETROIT_TEST_CMD"
+  elif [ -f "$REPO_DIR/package.json" ]; then
+    script=$(python3 -c "import json; print(json.load(open('$REPO_DIR/package.json')).get('scripts',{}).get('test',''))" 2>/dev/null)
+    case "$script" in
+      ""|*"no test specified"*) ;;  # none, or the npm init placeholder
+      *) cmd="npm test --silent" ;;
+    esac
+  fi
+  if [ -z "$cmd" ]; then
+    log "test gate: no test command — skipped"
+    return 0
+  fi
+  if [ -f "$REPO_DIR/package.json" ] && [ ! -d "$REPO_DIR/node_modules" ]; then
+    log "test gate: node_modules missing — npm install"
+    if ! (cd "$REPO_DIR" && npm install --silent) >>"$LOGFILE" 2>&1; then
+      TEST_GATE_OUTPUT="npm install failed before tests could run (see log)"
+      log "test gate: npm install failed"
+      return 1
+    fi
+  fi
+  log "test gate: running '$cmd' (timeout ${timeout_secs}s)"
+  out=$(mktemp)
+  ( cd "$REPO_DIR" && with_timeout "$timeout_secs" bash -c "$cmd" ) >"$out" 2>&1 || rc=$?
+  cat "$out" >> "$LOGFILE"
+  if [ "$rc" -eq 124 ]; then
+    TEST_GATE_OUTPUT="tests timed out after ${timeout_secs}s"
+  elif [ "$rc" -ne 0 ]; then
+    TEST_GATE_OUTPUT=$(tail -30 "$out")
+  fi
+  rm -f "$out"
+  [ "$rc" -eq 0 ]
+}
+
+# scan_secret_diff — scan the ADDED lines of the branch diff for secret-shaped
+# content: AWS/Anthropic/GitHub/Slack token formats, PEM private-key headers,
+# and quoted key/token/password assignments (12+ chars). Lockfiles excluded
+# (integrity hashes false-positive). Returns 0 if a secret is found.
+scan_secret_diff() {
+  local added
+  added=$(git diff "$BASE_BRANCH...$BRANCH" -- . ':(exclude)package-lock.json' ':(exclude)bun.lock' ':(exclude)yarn.lock' 2>/dev/null \
+    | grep -E '^\+' | grep -v '^+++')  # BRE literal +++: BSD grep rejects \+\+\+
+  [ -n "$added" ] || return 1
+  echo "$added" | grep -qE \
+    -e 'AKIA[0-9A-Z]{16}' \
+    -e 'sk-(ant-)?[A-Za-z0-9_-]{20,}' \
+    -e '(ghp|gho|ghu|ghs)_[A-Za-z0-9]{36}' \
+    -e 'github_pat_[A-Za-z0-9_]{22,}' \
+    -e 'xox[baprs]-[A-Za-z0-9-]{10,}' \
+    -e '\-\-\-\-\-BEGIN( RSA| EC| DSA| OPENSSH| PGP)? PRIVATE KEY' && return 0
+  echo "$added" | grep -qiE \
+    "(api[_-]?key|secret[_-]?key|access[_-]?token|private[_-]?key|password|passwd)[\"']?[[:space:]]*[:=][[:space:]]*[\"'][^\"']{12,}[\"']" && return 0
+  return 1
+}
+
 # check_gate <gate-text>
 # Dispatches a natural-language rule bullet to a framework-recognized check.
 # Uses bash glob keyword matching against gate text.
@@ -26,14 +92,17 @@ check_gate() {
     return $?
   fi
 
-  # yagni: *credential*/*token* in the first case shadow the content-scanning
-  # case below, so bullets like "No hardcoded credentials" only get the filename
-  # check — fixed when both cases merge into one diff-content secret scan.
+  # *credential*/*token* here still shadow the *hardcoded*credential* case
+  # below, but harmlessly — both run the same scan_secret_diff content scan;
+  # this case just adds the filename check on top.
   # shellcheck disable=SC2221,SC2222
   case "$gate_lower" in
     *secret*|*.env*|*.pem*|*.key*|*credential*|*token*)
+      # Filename check: .env anchored (config.envelope.js must not match),
+      # .pem/.key by extension, credential-ish names anywhere in the path.
       git diff "$BASE_BRANCH...$BRANCH" --name-only 2>/dev/null \
-        | grep -qE '\.env|\.pem|\.key|credentials|secrets|tokens' && return 1
+        | grep -qE '(^|/)\.env(\.|$)|\.(pem|key)$|credentials|secrets|tokens' && return 1
+      scan_secret_diff && return 1
       return 0
       ;;
     *changelog*)
@@ -50,10 +119,9 @@ check_gate() {
       return 0
       ;;
     *test*pass*|*pass*test*)
-      if grep -qE "(FAIL|ERROR|test.*failed|Tests:.*failed)" "$LOGFILE" 2>/dev/null \
-        && ! grep -q "FACTORY_RESULT:SUCCESS" "$LOGFILE"; then
-        return 1
-      fi
+      # Deterministic: the framework runs the repo's tests itself; the exit
+      # code decides. (Replaces the old grep-the-log-for-FAIL heuristic.)
+      run_repo_tests || return 1
       return 0
       ;;
     *file*over*500*line*|*file*500*line*|*no*file*500*)
@@ -72,8 +140,7 @@ check_gate() {
       return 0
       ;;
     *hardcoded*credential*|*api*key*|*access*token*|*private*key*)
-      git diff "$BASE_BRANCH...$BRANCH" 2>/dev/null \
-        | grep -qE "^\+.*(api[_-]?key|secret[_-]?key|password|private[_-]?key|access[_-]?token)[[:space:]]*[:=][[:space:]]*['\"][^'\"]{8,}['\"]" && return 1
+      scan_secret_diff && return 1
       return 0
       ;;
     *eval*)
@@ -119,7 +186,12 @@ run_gate_bullets() {
     case "$?" in
       0) if [ "$strict" = true ]; then log "PASS: ! $gate"; else log "PASS: $gate"; fi ;;
       1) if [ "$strict" = true ]; then log "FAIL: ! $gate"; else log "FAIL: $gate"; fi
-         GATE_FAILURES="${GATE_FAILURES}\n- $gate" ;;
+         GATE_FAILURES="${GATE_FAILURES}\n- $gate"
+         # Test gate captures WHY it failed — thread it into the FIX prompt
+         if [ -n "${TEST_GATE_OUTPUT:-}" ]; then
+           GATE_FAILURES="${GATE_FAILURES}\n  test output (last lines):\n$TEST_GATE_OUTPUT"
+           TEST_GATE_OUTPUT=""
+         fi ;;
       2) if [ "$strict" = true ]; then
            log "FAIL: ! $gate (strict — framework has no check for this rule)"
            GATE_FAILURES="${GATE_FAILURES}\n- $gate (strict: add a check_gate pattern or drop the !)"

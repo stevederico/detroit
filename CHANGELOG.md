@@ -1,5 +1,11 @@
 # Changelog
 
+0.50.0
+
+  Test gate runs tests
+  Secret gate scans content
+  Test output in FIX prompt
+
 0.49.0
 
   Split into lib modules

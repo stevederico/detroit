@@ -1,5 +1,10 @@
 # Changelog
 
+0.43.0
+  Full-width queue with status/label filters
+  Search issues, stat count tiles
+  Task status and labels frontmatter
+
 0.42.0
   Brutalist theme for the web UI
   Zero radius, orange accent, mono uppercase

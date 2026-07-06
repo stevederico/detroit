@@ -1,5 +1,11 @@
 # Changelog
 
+0.49.0
+
+  Split into lib modules
+  Dedupe dev server logic
+  Slim entry point
+
 0.48.0
 
   Combinable CLI flags

@@ -1,5 +1,9 @@
 # Changelog
 
+0.46.0
+  Revert top tiles
+  Task badge shows stage
+
 0.45.0
   Pipeline stage rail
   Six stages up top

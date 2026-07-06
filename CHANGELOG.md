@@ -1,5 +1,10 @@
 # Changelog
 
+0.44.0
+  Light/dark theme toggle (top right)
+  Higher-contrast dark mode
+  Theme persists via localStorage
+
 0.43.0
   Full-width queue with status/label filters
   Search issues, stat count tiles

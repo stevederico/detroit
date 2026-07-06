@@ -1,5 +1,11 @@
 # Changelog
 
+0.47.0
+
+  Add self-test suite
+  Add GitHub Actions CI
+  Extract lib gate modules
+
 0.46.0
   Revert top tiles
   Task badge shows stage

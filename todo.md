@@ -1,6 +1,6 @@
 # Detroit TODO
 
-Updated with notes from Zach's AIE-26 code factory talk (Ramp Inspect, Stripe Minions, dark factory patterns, self-compounding, engineering fundamentals).
+Updated with insights from AIE-26 code factory discussions (Ramp Inspect, Stripe Minions, dark factory patterns, self-compounding, engineering fundamentals).
 
 ## Completed
 
@@ -17,7 +17,7 @@ Updated with notes from Zach's AIE-26 code factory talk (Ramp Inspect, Stripe Mi
 
 ## Pending / Next
 
-### Self-Improving & Compounding (Zach meta-game)
+### Self-Improving & Compounding (meta-game)
 - [ ] Post-run extraction: after every task/correction, capture reusable patterns into lessons/rules and update `factory.md` or dedicated files
 - [ ] Meta-compounding: build meta-skills that scan transcripts/runs and auto-improve other skills, rules, or standards
 - [ ] Daily cycle: ship high-leverage work → extract/improve harness/skills/factory.md → repeat
@@ -47,7 +47,7 @@ Updated with notes from Zach's AIE-26 code factory talk (Ramp Inspect, Stripe Mi
 - [ ] Intake breadth: Slack, Linear, PR comments, Chrome extension/visual selection, in addition to `tasks/` and GitHub issues
 - [ ] "Filesystem becomes part of the agent's brain" — deeper persistent memory and context across runs
 
-## Notes from Zach
+## Key principles
 - Success depends more on **engineering fundamentals** (the 8 stages + reproducible envs + fast tests) than model choice.
 - Ramp: 30%+ of merged PRs, full sandboxes + observability wiring + self-verification.
 - Stripe: 1,300+ PRs/week, ~500 MCP tools, devboxes, blueprints.

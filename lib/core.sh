@@ -31,6 +31,63 @@ with_timeout() {
   return "$rc"
 }
 
+# resolve_gh_repo [dir] — print owner/name for the git repo at dir (default: REPO_DIR).
+# Order: gh repo view → origin remote parse → gh user + basename.
+resolve_gh_repo() {
+  local dir="${1:-${REPO_DIR:-.}}" slug url owner name
+  slug=$(cd "$dir" 2>/dev/null && gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null) || true
+  if [ -n "$slug" ]; then
+    printf '%s\n' "$slug"
+    return 0
+  fi
+  url=$(git -C "$dir" remote get-url origin 2>/dev/null) || true
+  if [ -n "$url" ]; then
+    # git@github.com:owner/name.git | https://github.com/owner/name(.git)
+    slug=$(printf '%s' "$url" | sed -E \
+      -e 's#^git@github\.com:##' \
+      -e 's#^https?://github\.com/##' \
+      -e 's#\.git$##' \
+      -e 's#/$##')
+    case "$slug" in
+      */*) printf '%s\n' "$slug"; return 0 ;;
+    esac
+  fi
+  owner=$(gh api user --jq '.login' 2>/dev/null) || true
+  name=$(basename "$(cd "$dir" 2>/dev/null && pwd)")
+  if [ -n "$owner" ] && [ -n "$name" ]; then
+    printf '%s/%s\n' "$owner" "$name"
+    return 0
+  fi
+  return 1
+}
+
+# append_lesson <one-line> — durable failure memory in $DETROIT/lessons.md (max 50 bullets).
+append_lesson() {
+  local line="$1" file="${DETROIT}/lessons.md" date_s tmp count
+  [ -n "$line" ] || return 0
+  [ -n "${DETROIT:-}" ] || return 0
+  date_s=$(date +%Y-%m-%d)
+  if [ ! -f "$file" ]; then
+    printf '# Lessons\n\nFailures recorded by the factory. Injected into CODE prompts.\n\n' > "$file"
+  fi
+  printf -- '- %s %s\n' "$date_s" "$line" >> "$file"
+  count=$(grep -c '^- ' "$file" 2>/dev/null || echo 0)
+  if [ "${count:-0}" -gt 50 ]; then
+    tmp=$(mktemp)
+    # Keep header lines (non-bullets) + last 50 bullets
+    grep -v '^- ' "$file" > "$tmp" 2>/dev/null || true
+    grep '^- ' "$file" | tail -50 >> "$tmp"
+    mv "$tmp" "$file"
+  fi
+}
+
+# quality_fail <stage> <reason> — mark run quality failed and record a lesson.
+quality_fail() {
+  QUALITY_OK=false
+  append_lesson "$1: $2"
+  log "QUALITY_OK=false — $1: $2"
+}
+
 # Ctrl+C cleanup (trap installed by factory.sh)
 cleanup() {
   echo "" | ptee

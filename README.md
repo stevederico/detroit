@@ -15,8 +15,8 @@ Drop a markdown task in `tasks/`, and Detroit drives a coding agent through the 
 
 1. Picks the next task file from `tasks/`
 2. Routes to the repo (local, GitHub, or creates a new one)
-3. Claude codes it, runs tests, commits, opens a PR
-4. Moves the task file to `tasks/done/`
+3. Agent codes it, runs tests, commits, opens a PR
+4. Gates + CI + verify must pass — success → `tasks/done/`; quality fail after ship → `tasks/failed/` (never green on soft failure)
 
 ## Setup
 

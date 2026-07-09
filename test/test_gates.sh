@@ -59,7 +59,10 @@ assert_rc 1 "hung test command times out" check_gate "All tests must pass before
 unset DETROIT_TEST_CMD DETROIT_TEST_TIMEOUT
 assert_rc 0 "no package.json → skip-pass" check_gate "All tests must pass before a PR is opened"
 add_commit "$REPO_DIR" "package.json" '{"scripts": {"test": "echo \"Error: no test specified\" && exit 1"}}'
-assert_rc 0 "npm placeholder script → skip-pass" check_gate "All tests must pass before a PR is opened"
+assert_rc 1 "npm placeholder script → fail" check_gate "All tests must pass before a PR is opened"
+fresh_repo t1b
+add_commit "$REPO_DIR" "package.json" '{"name":"t1b","version":"1.0.0"}'
+assert_rc 1 "package.json with no test script → fail" check_gate "All tests must pass before a PR is opened"
 if command -v npm >/dev/null 2>&1; then
   fresh_repo t2
   add_commit "$REPO_DIR" "package.json" '{"name":"t2","version":"1.0.0","scripts":{"test":"node -e \"process.exit(0)\""}}'

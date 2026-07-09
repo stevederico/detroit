@@ -2,6 +2,7 @@
 # lib/postship.sh — post-ship stages: CI → VERIFY → UPDATE → DONE.
 # Reads pipeline globals set by lib/pipeline.sh; its final command's exit code
 # is the factory run's exit code. VERIFY uses lib/devserver.sh helpers.
+# Success requires HAS_SHIPPED and QUALITY_OK (fail closed on gate/CI/verify fail).
 
 run_postship() {
 # ── CI GATE (watch GitHub Actions, fix failures) ─────────
@@ -9,13 +10,17 @@ if [ "$HAS_SHIPPED" = true ]; then
   stage "CI"
   update_status "$TASK_NAME — watching CI"
   PR_NUM_CI="$PR_NUM"  # set by verify_shipped (gh pr list, not log scraping)
-  GH_OWNER_CI=$(gh api user --jq '.login' 2>/dev/null)
+  GH_REPO_SLUG=$(resolve_gh_repo "$REPO_DIR" 2>/dev/null || true)
+  if [ -z "$GH_REPO_SLUG" ]; then
+    GH_REPO_SLUG="$REPO_NAME"
+    log "WARN: could not resolve owner/name — using $GH_REPO_SLUG"
+  fi
 
   if [ -n "$PR_NUM_CI" ]; then
     # Wait for CI run to appear (max 30s)
     CI_RUN_ID=""
     for _ in $(seq 1 15); do
-      CI_RUN_ID=$(gh run list --repo "${GH_OWNER_CI}/${REPO_NAME}" --branch "$BRANCH" \
+      CI_RUN_ID=$(gh run list --repo "$GH_REPO_SLUG" --branch "$BRANCH" \
         --json databaseId,status --limit 1 2>/dev/null | \
         python3 -c "import json,sys; runs=json.loads(sys.stdin.read()); print(runs[0]['databaseId'] if runs else '')" 2>/dev/null)
       if [ -n "$CI_RUN_ID" ]; then break; fi
@@ -24,9 +29,9 @@ if [ "$HAS_SHIPPED" = true ]; then
 
     if [ -n "$CI_RUN_ID" ]; then
       log "Watching CI run #$CI_RUN_ID..."
-      gh run watch "$CI_RUN_ID" --repo "${GH_OWNER_CI}/${REPO_NAME}" 2>&1 | ptee
+      gh run watch "$CI_RUN_ID" --repo "$GH_REPO_SLUG" 2>&1 | ptee
 
-      CI_CONCLUSION=$(gh run view "$CI_RUN_ID" --repo "${GH_OWNER_CI}/${REPO_NAME}" --json conclusion --jq '.conclusion' 2>/dev/null)
+      CI_CONCLUSION=$(gh run view "$CI_RUN_ID" --repo "$GH_REPO_SLUG" --json conclusion --jq '.conclusion' 2>/dev/null)
       log "CI result: $CI_CONCLUSION"
 
       # If CI failed, try to fix (max 2 attempts)
@@ -36,7 +41,7 @@ if [ "$HAS_SHIPPED" = true ]; then
         CI_FIX_ATTEMPT=$((CI_FIX_ATTEMPT + 1))
         log "CI fix attempt $CI_FIX_ATTEMPT/$CI_MAX_ATTEMPTS"
 
-        CI_FAILURES=$(gh run view "$CI_RUN_ID" --repo "${GH_OWNER_CI}/${REPO_NAME}" --log-failed 2>/dev/null | tail -50)
+        CI_FAILURES=$(gh run view "$CI_RUN_ID" --repo "$GH_REPO_SLUG" --log-failed 2>/dev/null | tail -50)
         CI_FIX_PROMPT_FILE=$(mktemp)
         cat > "$CI_FIX_PROMPT_FILE" <<CI_FIX_EOF
 GitHub Actions CI failed. Fix the issues and push.
@@ -62,12 +67,12 @@ CI_FIX_EOF
 
         # Wait for new CI run
         sleep 5
-        CI_RUN_ID=$(gh run list --repo "${GH_OWNER_CI}/${REPO_NAME}" --branch "$BRANCH" \
+        CI_RUN_ID=$(gh run list --repo "$GH_REPO_SLUG" --branch "$BRANCH" \
           --json databaseId --limit 1 --jq '.[0].databaseId' 2>/dev/null)
         if [ -n "$CI_RUN_ID" ]; then
           log "Watching CI run #$CI_RUN_ID..."
-          gh run watch "$CI_RUN_ID" --repo "${GH_OWNER_CI}/${REPO_NAME}" 2>&1 | ptee
-          CI_CONCLUSION=$(gh run view "$CI_RUN_ID" --repo "${GH_OWNER_CI}/${REPO_NAME}" --json conclusion --jq '.conclusion' 2>/dev/null)
+          gh run watch "$CI_RUN_ID" --repo "$GH_REPO_SLUG" 2>&1 | ptee
+          CI_CONCLUSION=$(gh run view "$CI_RUN_ID" --repo "$GH_REPO_SLUG" --json conclusion --jq '.conclusion' 2>/dev/null)
           log "CI result: $CI_CONCLUSION"
         else
           log "No new CI run found"
@@ -79,6 +84,7 @@ CI_FIX_EOF
         log "CI passed"
       elif [ "$CI_CONCLUSION" = "failure" ]; then
         log "CI still failing after $CI_MAX_ATTEMPTS fix attempts"
+        quality_fail "ci" "still failing after $CI_MAX_ATTEMPTS fix attempts"
       fi
     else
       log "No CI run found — skipping CI gate"
@@ -93,6 +99,7 @@ if [ "$HAS_SHIPPED" = true ] && command -v agent-browser &>/dev/null; then
   # PR_NUM already set by verify_shipped
   SCREENSHOT_DIR="$LOGDIR/screenshots/$TASK_NAME"
   mkdir -p "$SCREENSHOT_DIR"
+  [ -n "${GH_REPO_SLUG:-}" ] || GH_REPO_SLUG=$(resolve_gh_repo "$REPO_DIR" 2>/dev/null || echo "$REPO_NAME")
 
   # Detect dev server command from package.json
   DEV_URL=""
@@ -178,12 +185,12 @@ VERIFY_EOF
 
       log "Verifying implementation (max 120s)..."
       VERIFY_OUTPUT=$(run_agent "$VERIFY_PROMPT_FILE" --model sonnet --timeout 120 \
-        --timeout-msg "VERIFY_PASS (timed out)" | ptee)
+        --timeout-msg "VERIFY_FAIL: timed out" | ptee)
       rm -f "$VERIFY_PROMPT_FILE"
 
       # Check if verification passed or failed
       if echo "$VERIFY_OUTPUT" | grep -q "VERIFY_FAIL"; then
-        FAIL_REASON=$(echo "$VERIFY_OUTPUT" | grep "VERIFY_FAIL" | sed 's/VERIFY_FAIL: *//')
+        FAIL_REASON=$(echo "$VERIFY_OUTPUT" | grep "VERIFY_FAIL" | head -1 | sed 's/.*VERIFY_FAIL: *//')
         log "Verification FAILED: $FAIL_REASON"
         log "Attempting fix..."
 
@@ -210,10 +217,16 @@ Steps:
 FIX_EOF
 
         log "Running fix session..."
-        run_agent "$FIX_PROMPT_FILE" --model sonnet --timeout 120 \
-          --timeout-msg "VERIFY_PASS (timed out)" | ptee
+        FIX_VERIFY_OUTPUT=$(run_agent "$FIX_PROMPT_FILE" --model sonnet --timeout 120 \
+          --timeout-msg "VERIFY_FAIL: fix timed out" | ptee)
         rm -f "$FIX_PROMPT_FILE"
-        log "Fix attempt completed"
+        if echo "$FIX_VERIFY_OUTPUT" | grep -q "VERIFY_FAIL" || ! echo "$FIX_VERIFY_OUTPUT" | grep -q "VERIFY_PASS"; then
+          FIX_REASON=$(echo "$FIX_VERIFY_OUTPUT" | grep "VERIFY_FAIL" | head -1 | sed 's/.*VERIFY_FAIL: *//')
+          quality_fail "verify" "${FIX_REASON:-still failing after fix}"
+          log "Verification still FAILED after fix"
+        else
+          log "Verification PASSED after fix"
+        fi
       else
         log "Verification PASSED"
       fi
@@ -230,8 +243,6 @@ FIX_EOF
   # Attach screenshots to PR
   SCREENSHOTS=$(find "$SCREENSHOT_DIR" -name '*.png' -type f 2>/dev/null)
   if [ -n "$SCREENSHOTS" ] && [ -n "$PR_NUM" ]; then
-    GH_OWNER=$(gh api user --jq '.login' 2>/dev/null)
-
     # Commit screenshots to branch and build the PR comment in one pass
     cd "$REPO_DIR" || exit 1
     COMMENT="## Verification Screenshots\n"
@@ -239,12 +250,12 @@ FIX_EOF
       [ -e "$img" ] || continue  # empty glob — no screenshots
       IMG_NAME=$(basename "$img")
       cp "$img" "$REPO_DIR/" && git add -- "$IMG_NAME"
-      COMMENT="${COMMENT}\n### ${IMG_NAME%.png}\n![${IMG_NAME}](https://github.com/${GH_OWNER}/${REPO_NAME}/blob/${BRANCH}/${IMG_NAME}?raw=true)\n"
+      COMMENT="${COMMENT}\n### ${IMG_NAME%.png}\n![${IMG_NAME}](https://github.com/${GH_REPO_SLUG}/blob/${BRANCH}/${IMG_NAME}?raw=true)\n"
     done
     git commit -m "Add verification screenshots" 2>&1 | ptee
     git push origin "$BRANCH" 2>&1 | ptee
 
-    gh pr comment "$PR_NUM" --repo "${GH_OWNER}/${REPO_NAME}" \
+    gh pr comment "$PR_NUM" --repo "$GH_REPO_SLUG" \
       --body "$(echo -e "$COMMENT")" 2>&1 | ptee
     log "Screenshots attached to PR #$PR_NUM"
   elif [ -n "$PR_NUM" ]; then
@@ -266,40 +277,50 @@ ${VERIFY_TAIL:-no output}
 \`\`\`"
     fi
     log "WARN: No screenshots — $REASON"
-    GH_OWNER=$(gh api user --jq '.login' 2>/dev/null)
-    gh pr comment "$PR_NUM" --repo "${GH_OWNER}/${REPO_NAME}" \
+    gh pr comment "$PR_NUM" --repo "$GH_REPO_SLUG" \
       --body "Screenshots missing: $REASON" 2>/dev/null
   fi
 fi
 
 # ── UPDATE ────────────────────────────────────────────────
 stage "UPDATE"
-if [ "$HAS_SHIPPED" = true ]; then
-  # If task came from a GitHub issue, comment the PR link and close it
-  ISSUE_REF=$(echo "$TASK_BODY" | sed -n '/^---$/,/^---$/p' | grep '^issue:' | sed 's/^issue: *//')
-  if [ -n "$ISSUE_REF" ]; then
-    ISSUE_REPO=$(echo "$ISSUE_REF" | cut -d'#' -f1)
-    ISSUE_NUM=$(echo "$ISSUE_REF" | cut -d'#' -f2)
-    gh issue comment "$ISSUE_NUM" --repo "$ISSUE_REPO" --body "Shipped in ${PR_URL:-branch $BRANCH}" 2>&1 | ptee
-    gh issue close "$ISSUE_NUM" --repo "$ISSUE_REPO" 2>&1 | ptee
-    log "Closed issue: $ISSUE_REF"
-  fi
+if [ "$HAS_SHIPPED" = true ] && [ "${QUALITY_OK:-true}" = true ]; then
+  FACTORY_OK=true
+elif [ "$HAS_SHIPPED" = true ]; then
+  FACTORY_OK=false
+else
+  FACTORY_OK=false
+fi
 
-  mv "$TASK_FILE" "$DONE_DIR/$(basename "$TASK_FILE")"
-  log "Moved to done: $TASK_NAME"
+if [ "$HAS_SHIPPED" = true ]; then
+  # Close linked GitHub issue only on full success
+  if [ "$FACTORY_OK" = true ]; then
+    ISSUE_REF=$(echo "$TASK_BODY" | sed -n '/^---$/,/^---$/p' | grep '^issue:' | sed 's/^issue: *//')
+    if [ -n "$ISSUE_REF" ]; then
+      ISSUE_REPO=$(echo "$ISSUE_REF" | cut -d'#' -f1)
+      ISSUE_NUM=$(echo "$ISSUE_REF" | cut -d'#' -f2)
+      gh issue comment "$ISSUE_NUM" --repo "$ISSUE_REPO" --body "Shipped in ${PR_URL:-branch $BRANCH}" 2>&1 | ptee
+      gh issue close "$ISSUE_NUM" --repo "$ISSUE_REPO" 2>&1 | ptee
+      log "Closed issue: $ISSUE_REF"
+    fi
+    mv "$TASK_FILE" "$DONE_DIR/$(basename "$TASK_FILE")"
+    log "Moved to done: $TASK_NAME"
+  else
+    mkdir -p "$FAILED_DIR"
+    mv "$TASK_FILE" "$FAILED_DIR/$(basename "$TASK_FILE")"
+    log "Moved to failed: $TASK_NAME (shipped but quality gates failed)"
+  fi
 
   REMAINING=$(find "$TASK_DIR" -maxdepth 1 -name '*.md' -type f 2>/dev/null | wc -l | xargs)
   log "Remaining tasks: $REMAINING"
 else
-  log "Skipped — task failed"
+  log "Skipped — task did not ship"
 fi
 
 # ── DONE ──────────────────────────────────────────────────
 stage "DONE"
-# The framework emits the definitive FACTORY_RESULT line (derived from
-# verify_shipped) — a stable grep target for humans and scripts tailing logs.
-# The agent's own step-17 print remains a breadcrumb; nothing trusts it.
-if [ "$HAS_SHIPPED" = true ]; then
+# Framework FACTORY_RESULT: shipped AND quality OK. Agent print is a breadcrumb only.
+if [ "$FACTORY_OK" = true ]; then
   log "FACTORY_RESULT:SUCCESS"
   log "Factory run successful"
   update_status "$TASK_NAME ✓ done"
@@ -319,6 +340,6 @@ if [ -n "$TASK_FILE" ]; then
   rm -rf "$LOCK_DIR/$(basename "$TASK_FILE").lock" 2>/dev/null
 fi
 
-# Exit based on verified factory result
-[ "$HAS_SHIPPED" = true ]
+# Exit based on full factory success (shipped + quality)
+[ "$FACTORY_OK" = true ]
 }

@@ -7,7 +7,7 @@ STATUS_DIR="$TESTDIR/.status"; mkdir -p "$STATUS_DIR"
 LOGFILE="$TESTDIR/test.log"; : > "$LOGFILE"
 TASK_FILE=""; WORKTREE_DIR=""; LOCK_DIR="$TESTDIR/.locks"; DETROIT="$DETROIT_ROOT"
 . "$DETROIT_ROOT/lib/core.sh"
-. "$DETROIT_ROOT/lib/pipeline.sh"
+. "$DETROIT_ROOT/lib/shipped.sh"
 log() { echo "$1" >> "$LOGFILE"; }  # quiet log for tests
 
 make_repo "$TESTDIR/repo"

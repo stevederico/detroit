@@ -1,5 +1,13 @@
 # Changelog
 
+0.53.0
+
+  Fail closed quality
+  VERIFY timeout is fail
+  Resolve real GH owner
+  Test gate requires tests
+  Lessons on failure
+
 0.52.0
 
   Environment knobs

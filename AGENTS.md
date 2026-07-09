@@ -5,9 +5,10 @@ Autonomous code factory that reads task files from `tasks/` and ships them as PR
 ## Structure
 
 - `factory.sh` — entry point. Parses flags, sources `lib/`, dispatches modes. Reads rules from `factory.md` and enforces them.
-- `lib/` — the actual pipeline, one sourced module per concern: `core.sh` (logging/status/cleanup), `args.sh` (flag parsing), `factory-md.sh` (spec parsing), `gates.sh` (deterministic rule gates), `agent.sh` (claude/dotbot/grok invocation), `devserver.sh` (dev server + test-account helpers), `modes.sh` (--parallel/--issues), `verify-prs.sh` (--verify), `pipeline.sh` (PICK→SHIP), `postship.sh` (CI→DONE).
+- `lib/` — pipeline modules: `core.sh` (logging/status/resolve_gh_repo/lessons/cleanup), `args.sh`, `factory-md.sh`, `gates.sh`, `agent.sh`, `devserver.sh`, `modes.sh`, `verify-prs.sh`, `shipped.sh` (verify_shipped), `code-stage.sh` (TRIAGE→CODE), `pipeline.sh` (PICK→SHIP), `postship.sh` (CI→DONE).
 - `factory.md` — portable spec of the standards the agent must follow. 8 H2 sections: `## style`, `## build`, `## testing`, `## documentation`, `## environment`, `## quality`, `## observability`, `## security`. Each bullet is one rule. Spec: https://github.com/stevederico/factory-md
-- `tasks/` — task queue. One markdown file per task. Completed tasks move to `tasks/done/`.
+- `tasks/` — task queue. One markdown file per task. Success → `tasks/done/`; shipped but quality-failed → `tasks/failed/`.
+- `lessons.md` — durable one-line failures (gates/CI/verify); last lines injected into CODE prompts.
 - `test/` — self-test suite (`bash test/run.sh`); runs with shellcheck in this repo's CI.
 - `logs/` — timestamped logs per run (gitignored)
 
@@ -33,8 +34,8 @@ Each file in `tasks/` is a task. The filename is the task name, the body is the 
 8. **SHIP** — confirm PR opened.
 9. **CI** — watch GitHub Actions, re-engage agent on failure (max 2 attempts).
 10. **VERIFY** — agent reads diff, screenshots affected pages via agent-browser.
-11. **UPDATE** — move task file to `tasks/done/`, close GitHub issue.
-12. **DONE** — return to default branch, log to `logs/{timestamp}.log`.
+11. **UPDATE** — success → `tasks/done/` + close issue; quality fail after ship → `tasks/failed/` (not SUCCESS).
+12. **DONE** — `FACTORY_RESULT` only SUCCESS when shipped **and** quality OK; log to `logs/{timestamp}.log`.
 
 ## Configuration
 

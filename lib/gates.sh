@@ -5,10 +5,10 @@
 
 # run_repo_tests — deterministically run the target repo's tests in $REPO_DIR.
 # Command resolution: DETROIT_TEST_CMD env override > package.json scripts.test
-# (npm test) > skip-pass. The npm init placeholder ("no test specified") also
-# skip-passes. Installs node_modules first if missing (worktrees start bare).
-# Runs under with_timeout (DETROIT_TEST_TIMEOUT, default 300s). Full output goes
-# to $LOGFILE; on failure the tail lands in TEST_GATE_OUTPUT for the FIX prompt.
+# (npm test). No package.json → skip-pass (non-Node). package.json with missing
+# or npm-placeholder scripts.test → fail (Node projects must have real tests).
+# Installs node_modules first if missing. Timeout: DETROIT_TEST_TIMEOUT (300s).
+# On failure the tail lands in TEST_GATE_OUTPUT for the FIX prompt.
 # Returns 0 on pass/skip, 1 on failure or timeout.
 run_repo_tests() {
   TEST_GATE_OUTPUT=""
@@ -19,12 +19,15 @@ run_repo_tests() {
   elif [ -f "$REPO_DIR/package.json" ]; then
     script=$(python3 -c "import json; print(json.load(open('$REPO_DIR/package.json')).get('scripts',{}).get('test',''))" 2>/dev/null)
     case "$script" in
-      ""|*"no test specified"*) ;;  # none, or the npm init placeholder
+      ""|*"no test specified"*)
+        TEST_GATE_OUTPUT="package.json present but no real test script"
+        log "test gate: no real test script — fail"
+        return 1
+        ;;
       *) cmd="npm test --silent" ;;
     esac
-  fi
-  if [ -z "$cmd" ]; then
-    log "test gate: no test command — skipped"
+  else
+    log "test gate: no package.json — skipped"
     return 0
   fi
   if [ -f "$REPO_DIR/package.json" ] && [ ! -d "$REPO_DIR/node_modules" ]; then

@@ -1,4 +1,5 @@
 # shellcheck shell=bash
+# shellcheck disable=SC2034  # HAS_SHIPPED/PR_* are pipeline globals consumed by postship.sh
 # lib/shipped.sh — decide whether a factory run actually shipped.
 # Sets HAS_SHIPPED, PR_NUM, PR_URL from verified facts (git + gh), not agent prints.
 

@@ -82,7 +82,9 @@ append_lesson() {
 }
 
 # quality_fail <stage> <reason> — mark run quality failed and record a lesson.
+# QUALITY_OK is a pipeline global consumed by postship.sh (SC2034 is a false positive).
 quality_fail() {
+  # shellcheck disable=SC2034
   QUALITY_OK=false
   append_lesson "$1: $2"
   log "QUALITY_OK=false — $1: $2"

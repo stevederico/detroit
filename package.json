@@ -1,6 +1,6 @@
 {
   "name": "detroit",
-  "version": "0.53.0",
+  "version": "0.54.0",
   "description": "Autonomous code factory. Reads task files from tasks/, ships them as PRs.",
   "private": true
 }

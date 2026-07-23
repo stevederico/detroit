@@ -1,5 +1,10 @@
 # Changelog
 
+0.54.0
+
+  Agent constraints doc
+  Bob gauntlet model
+
 0.53.0
 
   Fail closed quality

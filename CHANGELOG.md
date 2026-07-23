@@ -1,5 +1,9 @@
 # Changelog
 
+0.55.0
+
+  Explicit Bob post URL
+
 0.54.0
 
   Agent constraints doc

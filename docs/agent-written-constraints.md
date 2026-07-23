@@ -2,7 +2,9 @@
 
 How Uncle Bob Martin runs agents without reading their code — and what Detroit would need to match it.
 
-Source: [thread](https://x.com/unclebobmartin/status/2080257779395154409) (Jul 2026), especially [this reply](https://x.com/unclebobmartin/status/2080392677753790875). Related: [swarm-forge](https://github.com/unclebob/swarm-forge), [crap4java](https://github.com/unclebob/crap4java).
+Source post: https://x.com/unclebobmartin/status/2080257779395154409  
+Key reply (agents write the checker tools): https://x.com/unclebobmartin/status/2080392677753790875  
+Related: [swarm-forge](https://github.com/unclebob/swarm-forge), [crap4java](https://github.com/unclebob/crap4java)
 
 ---
 

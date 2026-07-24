@@ -5,6 +5,9 @@
 mode_parallel() {
   local AGENTS="$PARALLEL_N"
   rm -f "$STATUS_DIR"/agent-* 2>/dev/null
+  # Children re-exec `bash $0` without args — pass the repo filter via env so
+  # each parallel agent honors --repo too.
+  export DETROIT_REPO="${REPO_FILTER:-}"
 
   echo "━━━ DETROIT: $AGENTS parallel agents ━━━"
   echo ""

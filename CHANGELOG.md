@@ -1,5 +1,9 @@
 # Changelog
 
+0.56.0
+
+  Repo filter for runs (--repo / DETROIT_REPO)
+
 0.55.0
 
   Explicit Bob post URL

@@ -15,9 +15,14 @@ QUALITY_OK=true
 HAS_SHIPPED=false
 FACTORY_OK=false
 
-# Find first unlocked task
+# Find first unlocked task. With REPO_FILTER set (--repo / DETROIT_REPO), skip
+# tasks whose frontmatter repo: doesn't match — so a run targets one project.
 TASK_FILE=""
 for candidate in $(find "$TASK_DIR" -maxdepth 1 -name '*.md' -type f 2>/dev/null | sort); do
+  if [ -n "${REPO_FILTER:-}" ]; then
+    cand_repo=$(awk '/^---$/{n++;next} n==1 && /^repo:/{gsub(/^repo: */,"");print;exit}' "$candidate")
+    [ "$cand_repo" = "$REPO_FILTER" ] || continue
+  fi
   LOCK_FILE="$LOCK_DIR/$(basename "$candidate").lock"
   # Try to acquire lock (atomic via mkdir)
   if mkdir "$LOCK_FILE" 2>/dev/null; then

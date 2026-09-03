@@ -1,5 +1,10 @@
 # Changelog
 
+0.57.0
+
+  Add detroit skill
+  Document skill usage
+
 0.56.0
 
   Repo filter for runs (--repo / DETROIT_REPO)

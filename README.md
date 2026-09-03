@@ -73,6 +73,21 @@ Run it in a second terminal alongside the factory. Std-only Rust — no crates, 
 
 Local-only by design: it binds `127.0.0.1` and can start runs, so **don't expose it**. Runs triggered from the UI approve their plan in the browser (`DETROIT_APPROVE_PLAN=web`) — the agent pauses at the plan gate until you click Approve or Reject.
 
+## Skill
+
+Use Detroit from inside an agent session without leaving it. The skill is a thin router over `factory.sh` — the agent performs triage/plan/code inline, bash keeps owning locks, worktrees, gates, CI, and ship detection.
+
+```bash
+detroit run                    # run the next task from tasks/
+detroit dry-run                # resolve task/repo/branch, print prompt, run nothing
+detroit parallel 3             # spawn 3 factory agents (worktree-isolated)
+detroit for my-app             # only run tasks whose repo: matches my-app
+detroit sync issues owner/repo # pull open issues labeled detroit into tasks/
+detroit verify owner/repo      # screenshot open PRs
+```
+
+Full trigger table, gate reference, and prompt fragments live in [`skills/detroit/SKILL.md`](skills/detroit/SKILL.md). Install it where your agent looks for skills, then call `factory.sh` flags from the detroit repo root.
+
 ## Task Format
 
 Each task is a markdown file in `tasks/`. The filename becomes the task name. The file body is the full prompt sent to Claude — write as much or as little as you need.

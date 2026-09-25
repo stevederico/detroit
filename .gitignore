@@ -6,3 +6,4 @@ tasks/.locks/
 .status/
 demo/
 detroit-web
+.shift.lock/

@@ -49,4 +49,28 @@ quality_fail "ci" "still red"
 assert_eq "false" "$QUALITY_OK" "QUALITY_OK flipped"
 assert_contains "$(cat "$DETROIT/lessons.md")" "ci: still red" "quality_fail records lesson"
 
+echo "pick_task:"
+TASK_DIR="$TESTDIR/tasks"; LOCK_DIR="$TASK_DIR/.locks"
+mkdir -p "$TASK_DIR/failed" "$LOCK_DIR"
+REPO_FILTER=""; unset DETROIT_SHIFT_SKIP
+printf 'x\n' > "$TASK_DIR/b.md"; printf 'x\n' > "$TASK_DIR/a.md"
+printf 'x\n' > "$TASK_DIR/failed/0.md"; printf 'x\n' > "$TASK_DIR/notes.txt"
+assert_eq "$TASK_DIR/a.md" "$(pick_task)" "first .md by filename, failed/ ignored"
+assert_eq "false" "$([ -d "$LOCK_DIR/a.md.lock" ] && echo true || echo false)" "peek takes no lock"
+mkdir "$LOCK_DIR/a.md.lock"
+assert_eq "$TASK_DIR/b.md" "$(pick_task)" "live lock skipped"
+touch -t 202001010000 "$LOCK_DIR/a.md.lock"
+assert_eq "$TASK_DIR/a.md" "$(pick_task)" "stale lock cleared first, task picked"
+assert_eq "$TASK_DIR/b.md" "$(DETROIT_SHIFT_SKIP="a.md" pick_task)" "DETROIT_SHIFT_SKIP honored"
+assert_eq "" "$(DETROIT_SHIFT_SKIP="a.md
+b.md" pick_task)" "multi-line skip list; nothing left"
+assert_eq "$TASK_DIR/a.md" "$(DETROIT_SHIFT_SKIP="a" pick_task)" "skip matches whole names only"
+printf -- '---\nrepo: web\n---\nx\n' > "$TASK_DIR/c.md"
+assert_eq "$TASK_DIR/c.md" "$(REPO_FILTER=web pick_task)" "repo filter"
+printf 'x\n' > "$TASK_DIR/0 fix login.md"
+assert_eq "$TASK_DIR/0 fix login.md" "$(pick_task)" "name with spaces"
+assert_eq "$TASK_DIR/0 fix login.md" "$(pick_task --lock)" "--lock returns the task"
+assert_eq "true" "$([ -d "$LOCK_DIR/0 fix login.md.lock" ] && echo true)" "--lock takes the lock"
+assert_eq "$TASK_DIR/a.md" "$(pick_task --lock)" "next --lock moves on"
+
 summarize

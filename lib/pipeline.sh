@@ -15,21 +15,9 @@ QUALITY_OK=true
 HAS_SHIPPED=false
 FACTORY_OK=false
 
-# Find first unlocked task. With REPO_FILTER set (--repo / DETROIT_REPO), skip
-# tasks whose frontmatter repo: doesn't match — so a run targets one project.
-TASK_FILE=""
-for candidate in $(find "$TASK_DIR" -maxdepth 1 -name '*.md' -type f 2>/dev/null | sort); do
-  task_in_repo_filter "$candidate" || continue
-  LOCK_FILE="$LOCK_DIR/$(basename "$candidate").lock"
-  # Try to acquire lock (atomic via mkdir)
-  if mkdir "$LOCK_FILE" 2>/dev/null; then
-    TASK_FILE="$candidate"
-    break
-  fi
-done
-
-# Clean up stale locks (older than 30 min)
-find "$LOCK_DIR" -maxdepth 1 -name '*.lock' -type d -mmin +30 -exec rm -rf {} \; 2>/dev/null
+# First free task, locked (lib/core.sh pick_task). With REPO_FILTER set
+# (--repo / DETROIT_REPO), only tasks whose frontmatter repo: matches.
+TASK_FILE=$(pick_task --lock)
 
 if [ -z "$TASK_FILE" ]; then
   log "No pending tasks (or all locked)"

@@ -1,5 +1,9 @@
 # Changelog
 
+0.62.0
+
+  Update agent providers
+
 0.61.0
 
   Default to Grok

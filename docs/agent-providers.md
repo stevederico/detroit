@@ -1,15 +1,18 @@
 # Agent Providers
 
-Detroit currently hardcodes Claude Code CLI. This doc captures research on making the agent layer swappable.
+Research on making the agent layer swappable. Option 1 below shipped: `run_agent()` in `lib/agent.sh` runs the Grok CLI (default), Claude Code, or dotbot, chosen by `DETROIT_AGENT`.
 
 ## Current coupling
 
-`factory.sh` calls `claude -p "prompt" --dangerously-skip-permissions` in 6 places (CODE, FIX, CI FIX, VERIFY stages). The prompts themselves are model-agnostic. The pipeline logic (task routing, branching, linting, CI gating, PR creation) is plain shell with `git` and `gh`.
+Every stage (TRIAGE, PLAN, CODE, FIX, CI FIX, VERIFY) calls `run_agent()` in `lib/agent.sh`. It picks the CLI from `DETROIT_AGENT` (`grok` default, `claude`, `dotbot`) and parses each CLI's stream format. `DETROIT_MODEL` sets the model for every call, for every agent. The prompts are model-agnostic. The pipeline logic (task routing, branching, linting, CI gating, PR creation) is plain shell with `git` and `gh`.
+
+Originally `factory.sh` called `claude -p "prompt" --dangerously-skip-permissions` directly in 6 places.
 
 ## CLI landscape (as of 2026-04)
 
 | CLI | Autonomous flag | Sandboxed? | Streaming? |
 |---|---|---|---|
+| Grok CLI (default) | `-p "prompt"` headless | No | `--output-format streaming-json` |
 | Claude Code | `--dangerously-skip-permissions` | No | `--output-format stream-json` |
 | Codex CLI | `--approval-mode full-auto` | Yes (network-disabled sandbox) | Yes |
 | Gemini CLI | `echo "prompt" \| gemini` | Optional `-s` flag | Yes |
@@ -17,7 +20,7 @@ Detroit currently hardcodes Claude Code CLI. This doc captures research on makin
 
 opencode and Cursor lack headless modes — not viable as CLIs.
 
-Only Codex CLI is sandboxed by default. Claude, Gemini, and aider give unrestricted filesystem + shell access. If the runner is the sandbox (GitHub Actions, Modal), the CLI's own sandbox doesn't matter.
+Only Codex CLI is sandboxed by default. Grok, Claude, Gemini, and aider give unrestricted filesystem + shell access. If the runner is the sandbox (GitHub Actions, Modal), the CLI's own sandbox doesn't matter.
 
 ## OpenCode as a runtime (Ramp's approach)
 
@@ -37,9 +40,9 @@ OpenCode advantages over CLI swapping:
 
 ## Options
 
-### 1. Swap CLI flags (minimal)
+### 1. Swap CLI flags (minimal) — shipped
 
-Abstract the 6 call sites into a `run_agent()` function. Config var `DETROIT_AGENT=claude|codex|gemini|aider` selects the CLI and flags. Ship today, low effort.
+Abstract the call sites into a `run_agent()` function. Config var `DETROIT_AGENT` selects the CLI and flags. Shipped with `grok` (default), `claude`, and `dotbot`; codex, gemini, and aider are not wired up.
 
 Pros: simple, no new deps, keeps shell script identity
 Cons: each CLI has different streaming formats, error handling, quirks
@@ -51,9 +54,9 @@ Replace CLI calls with OpenCode server. Gains model-agnostic agent, SDK, plugins
 Pros: model-agnostic, what Ramp validated at scale, unified interface
 Cons: new dependency, bigger rewrite, more complexity
 
-### 3. Stay Claude-only
+### 3. Stay Claude-only — superseded
 
-Keep current approach. Simplest. Already works.
+The original approach, replaced by option 1.
 
 Pros: no abstraction overhead, one thing to maintain
 Cons: vendor lock-in, can't use cheaper/faster models per task
@@ -62,7 +65,7 @@ Cons: vendor lock-in, can't use cheaper/faster models per task
 
 The sandbox (where code runs) and the agent (what runs the code) are orthogonal:
 
-- **Local + Claude** — current state
-- **GitHub Actions + Claude** — isolation without changing agent
+- **Local + Grok (default), Claude, or dotbot** — current state
+- **GitHub Actions + one CLI** — isolation without changing agent
 - **GitHub Actions + any CLI** — isolation + swappable agent
 - **Modal + OpenCode** — Ramp's approach, maximum flexibility

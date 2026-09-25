@@ -1,7 +1,7 @@
 ---
 name: detroit
 author: stevederico
-description: Autonomous code factory — tasks in, PRs out. Triggers on run factory, ship task, pick next task, triage plan, dry-run prompt, parallel run, sync issues, verify PRs, detroit fix CI verify.
+description: Autonomous code factory — tasks in, PRs out. Triggers on run factory, ship task, pick next task, triage plan, dry-run prompt, parallel run, budget shift, sync issues, verify PRs, detroit fix CI verify.
 allowed-tools: Bash(git *), Bash(gh *), Bash(npm *), Bash(agent-browser *), Read, Edit, Write, Glob, Grep
 ---
 
@@ -130,6 +130,9 @@ DETROIT_TEST_CMD="npm test --silent"
 DETROIT_TEST_TIMEOUT=300
 DETROIT_APPROVE_PLAN=0|1|web
 DETROIT_REPO=NAME                  # same as --repo
+DETROIT_BUDGET_STOP=0.80           # --shift stops at this session/weekly fraction
+DETROIT_SHIFT_PAUSE=30             # --shift seconds between tasks
+DETROIT_USAGE_MAX_AGE=900          # --shift treats older usage records as stale
 DETROIT_PROJECTS="$HOME/code"      # where target repos live
 ```
 

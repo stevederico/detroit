@@ -2,6 +2,8 @@
 
 Detroit needs a daemon mode (`--watch`) to auto-process new task files. dotbot already has a cron-like job scheduler (`schedule_job`, `list_jobs`, `toggle_job`, `cancel_job`) that fires prompts through the agent loop on recurring intervals.
 
+> Since 0.59.0, `factory.sh --shift` covers the budget-bounded case without dotbot: cron starts a shift, and it runs tasks until the queue drains or the usage window reaches `DETROIT_BUDGET_STOP`. See [budget-shift.md](budget-shift.md). A `--watch` daemon is still open.
+
 ## How dotbot scheduling works
 
 - `schedule_job` stores a prompt + interval in SQLite via `cronStore`

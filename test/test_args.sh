@@ -68,5 +68,8 @@ AGENT_ID=0
 assert_rc 0 "fast command passes" with_timeout 5 true
 assert_rc 1 "failing command rc preserved" with_timeout 5 false
 assert_rc 124 "hung command times out" with_timeout 1 sleep 30
+T0=$SECONDS
+assert_eq "hi" "$(with_timeout 5 echo hi)" "captured output"
+assert_eq "true" "$([ $((SECONDS - T0)) -lt 3 ] && echo true)" "capture returns without waiting on the watchdog"
 
 summarize

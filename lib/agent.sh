@@ -2,10 +2,11 @@
 # lib/agent.sh — agent CLI invocation (claude, dotbot, grok).
 
 # ── Agent configuration ───────────────────────────────────
-# DETROIT_AGENT: claude (default), dotbot, grok
+# DETROIT_AGENT: grok (default), claude, dotbot
 # DETROIT_PROVIDER: xai (default) — provider for dotbot (xai, anthropic, openai, ollama)
-# DETROIT_MODEL: model override for dotbot and grok (grok needs XAI_API_KEY set)
-DETROIT_CLI="${DETROIT_AGENT:-claude}"
+# DETROIT_MODEL: model for every call (grok needs XAI_API_KEY set). For claude it
+#   replaces the caller's --model alias, so --shift checks the budget it spends.
+DETROIT_CLI="${DETROIT_AGENT:-grok}"
 
 # run_agent <prompt_file> [--model <model>] [--timeout <secs>] [--timeout-msg <msg>] [--verbose]
 # Runs the configured agent CLI and streams parsed output to stdout.
@@ -29,6 +30,7 @@ run_agent() {
   case "$DETROIT_CLI" in
     claude)
       local -a args=(-p "$prompt" --dangerously-skip-permissions --output-format stream-json)
+      [ -n "${DETROIT_MODEL:-}" ] && model="$DETROIT_MODEL"
       [ -n "$model" ] && args+=(--model "$model")
       [ -n "$verbose" ] && args+=(--verbose)
 

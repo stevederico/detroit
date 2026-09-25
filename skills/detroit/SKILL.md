@@ -124,7 +124,8 @@ opens the diff-detected target route, screenshots, prints
 ## Knobs
 
 ```bash
-DETROIT_AGENT=claude|dotbot|grok   # default claude
+DETROIT_AGENT=grok|claude|dotbot   # default grok
+DETROIT_MODEL=...                  # model for every call (all agents)
 DETROIT_CODE_TIMEOUT=3600          # CODE stage seconds
 DETROIT_TEST_CMD="npm test --silent"
 DETROIT_TEST_TIMEOUT=300

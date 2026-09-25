@@ -17,11 +17,13 @@ ptee() { while IFS= read -r line; do echo "$line" >> "$LOGFILE"; echo "${PREFIX}
 
 # with_timeout <secs> <cmd...> — portable timeout (macOS has no timeout(1)).
 # Runs cmd with a sleep-kill watchdog; returns 124 on timeout, else cmd's rc.
+# The watchdog's output goes to /dev/null so $(with_timeout ...) returns as
+# soon as cmd does instead of waiting on the watchdog's sleep.
 with_timeout() {
   local secs="$1"; shift
   "$@" &
   local pid=$!
-  ( sleep "$secs"; kill -TERM "$pid" 2>/dev/null ) &
+  ( sleep "$secs"; kill -TERM "$pid" 2>/dev/null ) >/dev/null 2>&1 &
   local dog=$!
   local rc=0
   wait "$pid" || rc=$?
@@ -70,6 +72,32 @@ task_in_repo_filter() {
   [ "$repo" = "$REPO_FILTER" ]
 }
 
+# pick_task [--lock] — print the first task PICK takes: *.md directly in
+# TASK_DIR (never done/ or failed/), filename order, matching REPO_FILTER, not
+# named in DETROIT_SHIFT_SKIP (newline list), not locked. Locks older than 30
+# min are cleared first. --lock takes the lock (atomic mkdir) before printing;
+# without it this is a peek. Prints nothing when no task is free.
+pick_task() {
+  local take=false candidate name nl='
+'
+  [ "${1:-}" = --lock ] && take=true
+  find "$LOCK_DIR" -maxdepth 1 -name '*.lock' -type d -mmin +30 -exec rm -rf {} \; 2>/dev/null
+  while IFS= read -r candidate; do
+    [ -n "$candidate" ] || continue
+    name=$(basename "$candidate")
+    case "$nl${DETROIT_SHIFT_SKIP:-}$nl" in *"$nl$name$nl"*) continue ;; esac
+    task_in_repo_filter "$candidate" || continue
+    if [ "$take" = true ]; then
+      mkdir "$LOCK_DIR/$name.lock" 2>/dev/null || continue
+    else
+      [ -d "$LOCK_DIR/$name.lock" ] && continue
+    fi
+    printf '%s\n' "$candidate"
+    return 0
+  done < <(find "$TASK_DIR" -maxdepth 1 -name '*.md' -type f 2>/dev/null | sort)
+  return 0
+}
+
 # append_lesson <one-line> — durable failure memory in $DETROIT/lessons.md (max 50 bullets).
 append_lesson() {
   local line="$1" file="${DETROIT}/lessons.md" date_s tmp count
@@ -103,6 +131,8 @@ quality_fail() {
 cleanup() {
   echo "" | ptee
   log "━━━ CANCELLED ━━━"
+  # Release a --shift lock (lib/shift.sh)
+  [ -n "${SHIFT_LOCK_HELD:-}" ] && rm -rf "$SHIFT_LOCK_HELD"
   # Remove task lock
   if [ -n "$TASK_FILE" ]; then
     rm -rf "$LOCK_DIR/$(basename "$TASK_FILE").lock" 2>/dev/null

@@ -26,7 +26,7 @@ Environment:
 | `DETROIT_BUDGET_STOP` | `0.80` | Stop when the 5-hour session or the weekly limit reaches this fraction |
 | `DETROIT_SHIFT_PAUSE` | `30` | Seconds to sleep between tasks |
 | `DETROIT_USAGE_MAX_AGE` | `900` | Usage file older than this many seconds is stale |
-| `DETROIT_AGENT` | `claude` | Which usage record to read. Already selects the CLI |
+| `DETROIT_AGENT` | `grok` | Which usage record to read. Already selects the CLI |
 
 ## Loop
 
@@ -71,11 +71,15 @@ A record that is a prepaid balance you keep, rather than a window that resets, d
 4. Wire `factory.sh` and `usage()`.
 5. One `--dry-run --shift` against a fixture task on this machine.
 
-## Implementation notes (0.59.0)
+## Implementation notes (0.61.0)
 
+- Grok is the default agent (`DETROIT_AGENT` unset). Grok's record has only a weekly window, so a default shift gates on weekly alone.
 - Each task runs as a child `bash factory.sh [--dry-run]`, so the pipeline's own `exit` calls end that task, not the shift.
-- A task still first in line after it ran ends the shift (`idle — <task> already ran this shift`). That covers `--dry-run`, which releases its lock, and a pre-ship failure whose lock went stale. A shift never spends budget twice on one task.
-- Usage age comes from the record's `updatedAt`, falling back to the file mtime. The refresh is `omarchy-agent-usage-update <agent>`. The file path honors `XDG_STATE_HOME` like the collector does.
-- `DETROIT_MODEL` matches a scoped row when every word of the row's model name (for example `Fable` in `Fable Weekly`) is a word of the model id (`claude-fable-5-1`). A matched row replaces the unscoped row for that window only.
-- A record with only a weekly window (Grok shape) still runs. Only a record with no session or weekly window counts as prepaid.
-- The Herdr check joins `herdr workspace list` (focus) with `herdr agent list` (agent kind and status). No `herdr` on PATH, or no server, counts as free.
+- Every task the shift ran goes in `DETROIT_SHIFT_SKIP`, which the child's PICK honors. A task left in `tasks/` (dry run, or stopped before SHIP) runs once per shift and never blocks the tasks behind it. The shift ends on `idle — no tasks`.
+- PICK and the shift share `pick_task` (`lib/core.sh`). It clears stale locks before choosing, so the shift's peek and the child's pick agree. Filenames with spaces work.
+- One shift at a time: `.shift.lock` (mkdir plus pid) in the Detroit root. A second shift logs `idle — another shift is running (pid N)` and exits 0. A lock whose pid is gone is taken over. While Herdr shows the session in use, the one shift sleeps. Cron can't stack more.
+- Usage age comes from the record's `updatedAt`, falling back to the file mtime. The refresh is `omarchy-agent-usage-update <agent>`, cut off after 120s. Herdr calls are cut off after 10s and then count as free. The file path honors `XDG_STATE_HOME` like the collector does.
+- `DETROIT_MODEL` matches a scoped row when every word of the row's model name (for example `Fable` in `Fable Weekly`) is a word of the model id (`claude-fable-5-1`). Each window uses the fuller of the matched row and the account-wide row, so a model row never hides the account limit.
+- `DETROIT_MODEL` sets the model for every agent call, claude included, so the budget checked is the budget spent.
+- A record with only a weekly window still runs. Only a record with no session or weekly window counts as prepaid.
+- The shift logs to `logs/<timestamp>-shift.log` and reports its state in `.status/agent-shift`. Each child keeps its own `-w0.log` and `agent-0`.

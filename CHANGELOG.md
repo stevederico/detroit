@@ -1,5 +1,15 @@
 # Changelog
 
+0.61.0
+
+  Default to Grok
+  Add shift lock
+  Skip ran tasks
+  Share task picker
+  Add shift timeouts
+  Honor DETROIT_MODEL everywhere
+  Separate shift log
+
 0.60.0
 
   Document shift knobs

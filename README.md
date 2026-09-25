@@ -6,7 +6,7 @@
 
 ### an autonomous code factory — tasks in, pull requests out
 
-Drop a markdown task in `tasks/`, and Detroit drives a coding agent through the whole pipeline — **triage → plan → build → test → ship** — running your tests and opening a PR with screenshots. It's a shell script you own, not a hosted black box, and it runs on Claude, Grok, or dotbot.
+Drop a markdown task in `tasks/`, and Detroit drives a coding agent through the whole pipeline — **triage → plan → build → test → ship** — running your tests and opening a PR with screenshots. It's a shell script you own, not a hosted black box, and it runs on Grok (default), Claude, or dotbot.
 
 > [!TIP]
 > **One [`factory.md`](https://github.com/stevederico/factory-md) runs the whole line.** A single file at your repo root declares the pipeline and the standards every change must meet — style, build, testing, security — in named sections. Edit it to control exactly what the agent does. Clone a factory, run it anywhere.
@@ -40,7 +40,7 @@ export DETROIT_PROJECTS="$HOME/code"
 ## Usage
 
 ```bash
-./factory.sh                              # run one task (Claude by default)
+./factory.sh                              # run one task (Grok by default)
 ./factory.sh --dry-run                    # preview what it would pick
 ./factory.sh --parallel 3                 # run 3 tasks in parallel
 ./factory.sh --shift                      # keep running tasks until the usage window hits 80%
@@ -48,9 +48,10 @@ export DETROIT_PROJECTS="$HOME/code"
 ./factory.sh --verify owner/repo          # re-verify all open PRs
 ./factory.sh --verify owner/repo 42       # re-verify a specific PR
 
-DETROIT_AGENT=dotbot ./factory.sh        # use dotbot instead of Claude
+DETROIT_AGENT=claude ./factory.sh        # use Claude Code instead of Grok
+DETROIT_AGENT=dotbot ./factory.sh        # use dotbot instead of Grok
 DETROIT_AGENT=dotbot DETROIT_PROVIDER=anthropic ./factory.sh  # dotbot + Anthropic
-DETROIT_AGENT=grok ./factory.sh          # use the xAI Grok CLI (needs XAI_API_KEY)
+DETROIT_MODEL=grok-4.7-build ./factory.sh  # pin the model for every agent call
 ```
 
 Run in its own terminal — not inside another tool. Monitor progress in a second terminal:
@@ -92,7 +93,7 @@ Full trigger table, gate reference, and prompt fragments live in [`skills/detroi
 
 ## Task Format
 
-Each task is a markdown file in `tasks/`. The filename becomes the task name. The file body is the full prompt sent to Claude — write as much or as little as you need.
+Each task is a markdown file in `tasks/`. The filename becomes the task name. The file body is the full prompt sent to the agent — write as much or as little as you need.
 
 **Existing repo** — add `repo:` in frontmatter:
 
@@ -105,7 +106,7 @@ Add a dark mode toggle to the settings page. Should respect system
 preference by default. Use the existing ThemeProvider context.
 ```
 
-**Screenshot verification** — if `agent-browser` is installed and the project has a `dev`/`start`/`preview` script, Detroit starts the dev server after shipping, reads the git diff to figure out which pages were affected, and uses Claude + agent-browser to take targeted screenshots of the changes. Screenshots are committed to the branch and commented on the PR.
+**Screenshot verification** — if `agent-browser` is installed and the project has a `dev`/`start`/`preview` script, Detroit starts the dev server after shipping, reads the git diff to figure out which pages were affected, and uses the agent + agent-browser to take targeted screenshots of the changes. Screenshots are committed to the branch and commented on the PR.
 
 **New repo** — omit `repo:` and Detroit creates one (named from the filename):
 
@@ -157,7 +158,7 @@ Detroit is designed to run unattended. Point cron at it and your issues get solv
 0 * * * * /path/to/detroit/factory.sh --shift >> /path/to/detroit/detroit.log 2>&1
 ```
 
-A shift reads Omarchy's usage record (`~/.local/state/omarchy/agents/usage/$DETROIT_AGENT.json`) and stops when the 5-hour session or the weekly window reaches `DETROIT_BUDGET_STOP` (default `0.80`). It sleeps while a focused Herdr workspace has the same agent working, never starts on stale usage, never replays `tasks/failed/`, and never starts on a prepaid balance. Tune with `DETROIT_SHIFT_PAUSE` (default 30s) and `DETROIT_USAGE_MAX_AGE` (default 900s). Spec: [`docs/budget-shift.md`](docs/budget-shift.md).
+A shift reads Omarchy's usage record (`~/.local/state/omarchy/agents/usage/$DETROIT_AGENT.json`) and stops when the 5-hour session or the weekly window reaches `DETROIT_BUDGET_STOP` (default `0.80`). Only one shift runs at a time, so an hourly cron is safe. A task that fails or stops before SHIP runs once per shift and the rest of the queue keeps going. It sleeps while a focused Herdr workspace has the same agent working, never starts on stale usage, never replays `tasks/failed/`, and never starts on a prepaid balance. Its log is `logs/*-shift.log`. Tune with `DETROIT_SHIFT_PAUSE` (default 30s) and `DETROIT_USAGE_MAX_AGE` (default 900s). Spec: [`docs/budget-shift.md`](docs/budget-shift.md).
 
 **Nightly batch** — run 5 tasks in parallel at 2am:
 
@@ -174,13 +175,13 @@ Based on patterns from Ramp Inspect and Stripe Minions:
 1. **Task queue** — `tasks/` folder, one markdown file per task
 2. **Task routing** — finds repo locally, clones from GitHub, or creates new
 3. **Branch isolation** — agents work on feature branches, never the default branch
-4. **Autonomous coding** — agent runs non-interactively (Claude or dotbot)
+4. **Autonomous coding** — agent runs non-interactively (Grok by default, Claude, or dotbot)
 5. **Test verification** — run tests, fail fast if broken
 6. **PR creation** — open a PR via `gh` CLI for every task
 7. **CI gate** — auto-generates GitHub Actions workflow, watches CI, fixes failures
 8. **Task completion** — move task file to `tasks/done/`
 9. **Visual verification** — targeted screenshots of changes via agent-browser
-10. **Streaming output** — real-time Claude session output via stream-json
+10. **Streaming output** — real-time agent session output via streaming JSON
 11. **Parallel execution** — run multiple tasks concurrently with `--parallel N`
 12. **Budget shift** — `--shift` keeps one worker busy until the usage window is nearly spent
 13. **Logging** — timestamped logs per run for debugging
@@ -236,7 +237,7 @@ Detroit's pipeline is an implementation detail of `factory.sh`:
 
 ## Requirements
 
-- [Claude Code](https://claude.ai/claude-code), [dotbot](https://github.com/stevederico/dotbot), or the [Grok CLI](https://docs.x.ai/build/cli) (needs `XAI_API_KEY`)
+- The [Grok CLI](https://docs.x.ai/build/cli) (default; needs `XAI_API_KEY`), [Claude Code](https://claude.ai/claude-code), or [dotbot](https://github.com/stevederico/dotbot)
 - `gh` CLI (authenticated)
 - `agent-browser` (optional, for screenshot verification)
 - Rust (optional, only to build the web UI)
@@ -251,7 +252,7 @@ Detroit does the same thing as GitHub Copilot Coding Agent and Claude for GitHub
 - **Configurable standards and workflow** — edit `factory.md` (a portable, framework-agnostic spec) to control exactly what the agent does
 - **Screenshot verification** — starts the dev server, reads the diff, screenshots the actual pages that changed
 - **Runs locally** — no data leaves your machine except API calls
-- **Swappable agent** — Claude Code, the xAI Grok CLI, or dotbot (any provider: xAI, Anthropic, OpenAI, Ollama)
+- **Swappable agent** — the xAI Grok CLI (default), Claude Code, or dotbot (any provider: xAI, Anthropic, OpenAI, Ollama)
 - **GitHub issues integration** — pull labeled issues into the queue, close them on completion
 - **No vendor lock-in** — swap Claude for another model, change the pipeline, fork it
 

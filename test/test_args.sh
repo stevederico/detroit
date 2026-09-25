@@ -42,10 +42,25 @@ assert_rc 2 "unknown flag rejected" run_quiet parse_args --bogus
 parse_args --help
 assert_eq "help" "$MODE" "--help sets mode"
 
+parse_args --shift
+assert_eq "shift" "$MODE" "--shift sets mode"
+assert_eq "false" "$DRY_RUN" "--shift alone is not a dry run"
+
+parse_args --dry-run --shift --repo detroit
+assert_eq "shift" "$MODE" "--shift combines with --dry-run and --repo"
+assert_eq "true" "$DRY_RUN" "--shift keeps --dry-run"
+assert_eq "detroit" "$REPO_FILTER" "--shift keeps --repo"
+
+assert_rc 2 "--shift + --parallel rejected" run_quiet parse_args --shift --parallel 2
+assert_rc 2 "--parallel + --shift rejected" run_quiet parse_args --parallel --shift
+assert_rc 2 "--shift + --issues rejected" run_quiet parse_args --shift --issues owner/repo
+assert_rc 2 "--shift + --verify rejected" run_quiet parse_args --verify owner/repo --shift
+
 echo "factory.sh CLI:"
 assert_rc 0 "--help exits 0" run_quiet bash "$DETROIT_ROOT/factory.sh" --help
 assert_rc 2 "unknown arg exits 2" run_quiet bash "$DETROIT_ROOT/factory.sh" --nope
 assert_rc 2 "--verify without repo exits 2" run_quiet bash "$DETROIT_ROOT/factory.sh" --verify
+assert_rc 2 "--shift --parallel exits 2" run_quiet bash "$DETROIT_ROOT/factory.sh" --shift --parallel
 
 echo "with_timeout:"
 AGENT_ID=0

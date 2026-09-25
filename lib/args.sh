@@ -1,17 +1,19 @@
 # shellcheck shell=bash
 # lib/args.sh — CLI flag parsing.
-# parse_args sets: MODE (run|parallel|verify|issues|help), PARALLEL_N,
+# parse_args sets: MODE (run|parallel|verify|issues|shift|help), PARALLEL_N,
 # VERIFY_REPO, VERIFY_PR, ISSUES_REPO, DRY_RUN, REPO_FILTER. Returns 2 on bad input.
 # Flags combine (e.g. --parallel 2 --dry-run); parallel/verify/issues are
-# mutually exclusive — last one wins.
+# mutually exclusive — last one wins. --shift with any of them is an error.
 
 usage() {
   cat <<'USAGE'
-Usage: bash factory.sh [--dry-run] [--parallel N] [--repo NAME] [--issues owner/repo] [--verify owner/repo [pr]]
+Usage: bash factory.sh [--dry-run] [--parallel N] [--shift] [--repo NAME] [--issues owner/repo] [--verify owner/repo [pr]]
 
   (no flags)                run the next task from tasks/
   --dry-run                 resolve task/repo/branch and print the prompt without running
   --parallel N              spawn N factory agents (default 3); combines with --dry-run
+  --shift                   run tasks one after another until the usage window hits
+                            DETROIT_BUDGET_STOP (default 0.80); see docs/budget-shift.md
   --repo NAME               only run tasks whose frontmatter repo: matches NAME (env: DETROIT_REPO)
   --issues owner/repo       pull open GitHub issues labeled 'detroit' into tasks/
   --verify owner/repo [pr]  screenshot open PRs (all, or one PR number)
@@ -27,20 +29,23 @@ parse_args() {
   ISSUES_REPO=""
   DRY_RUN=false
   REPO_FILTER="${DETROIT_REPO:-}"   # env seeds it; --repo overrides
+  local shift_flag=false other_mode=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --repo)
         if [ -z "${2:-}" ]; then echo "error: --repo needs NAME" >&2; usage >&2; return 2; fi
         REPO_FILTER="$2"; shift 2 ;;
+      --shift)
+        shift_flag=true; shift ;;
       --parallel)
-        MODE=parallel
+        MODE=parallel; other_mode=--parallel
         case "${2:-}" in
           *[!0-9]*|"") ;;  # no numeric arg — keep default
           *) PARALLEL_N="$2"; shift ;;
         esac
         shift ;;
       --verify)
-        MODE=verify
+        MODE=verify; other_mode=--verify
         if [ -z "${2:-}" ]; then echo "error: --verify needs owner/repo" >&2; usage >&2; return 2; fi
         VERIFY_REPO="$2"; shift 2
         case "${1:-}" in
@@ -48,7 +53,7 @@ parse_args() {
           *) VERIFY_PR="$1"; shift ;;
         esac ;;
       --issues)
-        MODE=issues
+        MODE=issues; other_mode=--issues
         if [ -z "${2:-}" ]; then echo "error: --issues needs owner/repo" >&2; usage >&2; return 2; fi
         ISSUES_REPO="$2"; shift 2 ;;
       --dry-run)
@@ -59,5 +64,11 @@ parse_args() {
         echo "error: unknown argument: $1" >&2; usage >&2; return 2 ;;
     esac
   done
+  if [ "$shift_flag" = true ]; then
+    if [ -n "$other_mode" ]; then
+      echo "error: --shift cannot combine with $other_mode" >&2; usage >&2; return 2
+    fi
+    [ "$MODE" = help ] || MODE="shift"
+  fi
   return 0
 }

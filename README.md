@@ -43,6 +43,7 @@ export DETROIT_PROJECTS="$HOME/code"
 ./factory.sh                              # run one task (Claude by default)
 ./factory.sh --dry-run                    # preview what it would pick
 ./factory.sh --parallel 3                 # run 3 tasks in parallel
+./factory.sh --shift                      # keep running tasks until the usage window hits 80%
 ./factory.sh --issues owner/repo          # pull GitHub issues into tasks/
 ./factory.sh --verify owner/repo          # re-verify all open PRs
 ./factory.sh --verify owner/repo 42       # re-verify a specific PR
@@ -149,6 +150,14 @@ Detroit is designed to run unattended. Point cron at it and your issues get solv
 0 * * * * /path/to/detroit/factory.sh --issues owner/repo >> /path/to/detroit/detroit.log 2>&1
 ```
 
+**Budget shift** — one worker runs task after task while the resetting usage window has room, then stops:
+
+```bash
+0 * * * * /path/to/detroit/factory.sh --shift >> /path/to/detroit/detroit.log 2>&1
+```
+
+A shift reads Omarchy's usage record (`~/.local/state/omarchy/agents/usage/$DETROIT_AGENT.json`) and stops when the 5-hour session or the weekly window reaches `DETROIT_BUDGET_STOP` (default `0.80`). It sleeps while a focused Herdr workspace has the same agent working, never starts on stale usage, never replays `tasks/failed/`, and never starts on a prepaid balance. Tune with `DETROIT_SHIFT_PAUSE` (default 30s) and `DETROIT_USAGE_MAX_AGE` (default 900s). Spec: [`docs/budget-shift.md`](docs/budget-shift.md).
+
 **Nightly batch** — run 5 tasks in parallel at 2am:
 
 ```bash
@@ -172,8 +181,9 @@ Based on patterns from Ramp Inspect and Stripe Minions:
 9. **Visual verification** — targeted screenshots of changes via agent-browser
 10. **Streaming output** — real-time Claude session output via stream-json
 11. **Parallel execution** — run multiple tasks concurrently with `--parallel N`
-12. **Logging** — timestamped logs per run for debugging
-13. **Scheduling** — cron or trigger to run without you
+12. **Budget shift** — `--shift` keeps one worker busy until the usage window is nearly spent
+13. **Logging** — timestamped logs per run for debugging
+14. **Scheduling** — cron or trigger to run without you
 
 ## Configuration
 

@@ -1,5 +1,12 @@
 # Changelog
 
+0.59.0
+
+  Add shift mode
+  Read Omarchy usage
+  Add Herdr check
+  Add shift tests
+
 0.58.0
 
   Plan budget shift

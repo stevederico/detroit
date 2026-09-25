@@ -70,3 +70,12 @@ A record that is a prepaid balance you keep, rather than a window that resets, d
 3. Herdr session check.
 4. Wire `factory.sh` and `usage()`.
 5. One `--dry-run --shift` against a fixture task on this machine.
+
+## Implementation notes (0.59.0)
+
+- Each task runs as a child `bash factory.sh [--dry-run]`, so the pipeline's own `exit` calls end that task, not the shift.
+- A task still first in line after it ran ends the shift (`idle — <task> already ran this shift`). That covers `--dry-run`, which releases its lock, and a pre-ship failure whose lock went stale. A shift never spends budget twice on one task.
+- Usage age comes from the record's `updatedAt`, falling back to the file mtime. The refresh is `omarchy-agent-usage-update <agent>`. The file path honors `XDG_STATE_HOME` like the collector does.
+- `DETROIT_MODEL` matches a scoped row when every word of the row's model name (for example `Fable` in `Fable Weekly`) is a word of the model id (`claude-fable-5-1`). A matched row replaces the unscoped row for that window only.
+- A record with only a weekly window (Grok shape) still runs. Only a record with no session or weekly window counts as prepaid.
+- The Herdr check joins `herdr workspace list` (focus) with `herdr agent list` (agent kind and status). No `herdr` on PATH, or no server, counts as free.

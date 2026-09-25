@@ -1,7 +1,7 @@
 #!/bin/bash
 # factory.sh — detroit code factory
 # Reads next task file from tasks/, ships them as PRs.
-# Usage: bash factory.sh [--dry-run] [--issues owner/repo] [--parallel N] [--verify owner/repo [pr]]
+# Usage: bash factory.sh [--dry-run] [--repo NAME] [--issues owner/repo] [--parallel N] [--shift] [--verify owner/repo [pr]]
 #
 # Entry point only — the pipeline lives in lib/:
 #   core.sh       logging, status, resolve_gh_repo, lessons, cleanup
@@ -12,6 +12,7 @@
 #   devserver.sh  dev server + test-account helpers
 #   modes.sh      --parallel and --issues modes
 #   verify-prs.sh --verify mode
+#   shift.sh      --shift mode (run tasks while the usage window has room)
 #   shipped.sh    verify_shipped (PR/remote facts)
 #   code-stage.sh TRIAGE → PLAN → CODE
 #   pipeline.sh   PICK → ROUTE → PREPARE → SCAFFOLD → CODE → GATES → FIX → SHIP
@@ -50,6 +51,7 @@ export AGENT_BROWSER_HEADED=""
 . "$DETROIT/lib/devserver.sh"
 . "$DETROIT/lib/modes.sh"
 . "$DETROIT/lib/verify-prs.sh"
+. "$DETROIT/lib/shift.sh"
 . "$DETROIT/lib/shipped.sh"
 . "$DETROIT/lib/code-stage.sh"
 . "$DETROIT/lib/pipeline.sh"
@@ -65,6 +67,7 @@ case "$MODE" in
   parallel) mode_parallel ;;
   verify)   mode_verify ;;
   issues)   mode_issues ;;
+  shift)    mode_shift ;;
   run)
     run_pipeline
     run_postship  # its final check is the factory run's exit code

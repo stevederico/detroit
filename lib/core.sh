@@ -61,6 +61,15 @@ resolve_gh_repo() {
   return 1
 }
 
+# task_in_repo_filter <task-file> — true when REPO_FILTER is unset or matches
+# the task's frontmatter repo: (so a run targets one project).
+task_in_repo_filter() {
+  [ -n "${REPO_FILTER:-}" ] || return 0
+  local repo
+  repo=$(awk '/^---$/{n++;next} n==1 && /^repo:/{gsub(/^repo: */,"");print;exit}' "$1")
+  [ "$repo" = "$REPO_FILTER" ]
+}
+
 # append_lesson <one-line> — durable failure memory in $DETROIT/lessons.md (max 50 bullets).
 append_lesson() {
   local line="$1" file="${DETROIT}/lessons.md" date_s tmp count

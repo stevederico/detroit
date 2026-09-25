@@ -18,6 +18,7 @@ Map the verb to the factory flag and run it from the detroit repo root:
 bash factory.sh                  # run the next task from tasks/
 bash factory.sh --dry-run        # resolve task/repo/branch, print prompt, run nothing
 bash factory.sh --parallel 3     # spawn 3 factory agents (worktree-isolated)
+bash factory.sh --shift          # run tasks one by one until the usage window hits DETROIT_BUDGET_STOP
 bash factory.sh --repo NAME      # only run tasks whose frontmatter repo: matches NAME
 bash factory.sh --issues owner/repo       # pull open issues labeled detroit into tasks/
 bash factory.sh --verify owner/repo       # screenshot all open PRs
@@ -25,7 +26,8 @@ bash factory.sh --verify owner/repo 42    # screenshot one PR
 ```
 
 Flags combine (e.g. `--parallel 2 --dry-run`). `parallel` / `verify` / `issues`
-are mutually exclusive — last one wins (`lib/args.sh`).
+are mutually exclusive — last one wins (`lib/args.sh`). `--shift` combines only
+with `--dry-run` and `--repo`; pairing it with the others exits 2.
 
 ## Task Format
 

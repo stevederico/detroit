@@ -1,5 +1,9 @@
 # Changelog
 
+0.58.0
+
+  Plan budget shift
+
 0.57.0
 
   Add detroit skill

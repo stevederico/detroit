@@ -82,6 +82,7 @@ Use Detroit from inside an agent session without leaving it. The skill is a thin
 detroit run                    # run the next task from tasks/
 detroit dry-run                # resolve task/repo/branch, print prompt, run nothing
 detroit parallel 3             # spawn 3 factory agents (worktree-isolated)
+detroit shift                  # run tasks until the usage window hits 80%
 detroit for my-app             # only run tasks whose repo: matches my-app
 detroit sync issues owner/repo # pull open issues labeled detroit into tasks/
 detroit verify owner/repo      # screenshot open PRs

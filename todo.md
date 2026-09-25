@@ -14,6 +14,7 @@ Updated with insights from AIE-26 code factory discussions (Ramp Inspect, Stripe
 - [x] Strict rules with `!` prefix (must pass deterministically)
 - [x] Web UI ("factory floor"): live agents, streaming logs, task queue, plan approval gate
 - [x] Standalone `factory-md` spec repo published
+- [x] Budget shift (`--shift`): run tasks while the usage window has room
 
 ## Pending / Next
 

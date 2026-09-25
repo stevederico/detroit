@@ -1,5 +1,10 @@
 # Changelog
 
+0.60.0
+
+  Document shift knobs
+  Update todo list
+
 0.59.0
 
   Add shift mode

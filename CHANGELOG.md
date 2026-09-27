@@ -1,5 +1,10 @@
 # Changelog
 
+0.64.0
+
+  Add test script
+  Clear npm env
+
 0.63.0
 
   Add opencode agent

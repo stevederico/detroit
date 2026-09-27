@@ -27,6 +27,7 @@ Environment:
 | `DETROIT_SHIFT_PAUSE` | `30` | Seconds to sleep between tasks |
 | `DETROIT_USAGE_MAX_AGE` | `900` | Usage file older than this many seconds is stale |
 | `DETROIT_AGENT` | `grok` | Which usage record to read. Already selects the CLI |
+| `DETROIT_SHIFT_MAX_HOURS` | `6` | Local agent (`opencode`) only. No task starts after this many hours |
 
 ## Loop
 
@@ -39,6 +40,16 @@ Environment:
 7. Sleep `DETROIT_SHIFT_PAUSE`, then go back to step 1.
 
 One shift is one worker. It does not spawn `--parallel` inside the loop.
+
+## Local agent (0.63.0)
+
+`DETROIT_AGENT=opencode` runs a local model. It has no usage record and no window that fills, so steps 2 to 4 are replaced:
+
+- Before step 1: if `DETROIT_SHIFT_MAX_HOURS` have passed since the shift started, exit 0 and log `idle — shift cap reached`. The cap is checked between tasks. A running task is not cut short.
+- In place of steps 2 to 4: check the model endpoint (`agent_preflight` in `lib/agent.sh`). If it is down, exit 0 and log `idle — model endpoint down`. `--dry-run` skips this check.
+- Steps 1, 5, 6, and 7 are unchanged. Every other agent keeps the usage loop above, and the hours cap never applies to them.
+
+The nightly timer in `scheduling/` runs this shift. See [scheduling.md](scheduling.md).
 
 ## Usage file
 

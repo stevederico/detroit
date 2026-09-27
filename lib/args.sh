@@ -13,7 +13,9 @@ Usage: bash factory.sh [--dry-run] [--parallel N] [--shift] [--repo NAME] [--iss
   --dry-run                 resolve task/repo/branch and print the prompt without running
   --parallel N              spawn N factory agents (default 3); combines with --dry-run
   --shift                   run tasks one after another until the usage window hits
-                            DETROIT_BUDGET_STOP (default 0.80); see docs/budget-shift.md
+                            DETROIT_BUDGET_STOP (default 0.80); see docs/budget-shift.md.
+                            DETROIT_AGENT=opencode (local model) has no usage window:
+                            runs until the queue is empty or DETROIT_SHIFT_MAX_HOURS (6)
   --repo NAME               only run tasks whose frontmatter repo: matches NAME (env: DETROIT_REPO)
   --issues owner/repo       pull open GitHub issues labeled 'detroit' into tasks/
   --verify owner/repo [pr]  screenshot open PRs (all, or one PR number)

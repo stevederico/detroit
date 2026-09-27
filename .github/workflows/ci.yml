@@ -6,5 +6,5 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # -S warning: info/style hints (SC2016 backticks-in-singles, SC1091 source-follow) are noise here
-      - run: shellcheck -S warning factory.sh lib/*.sh test/*.sh
+      - run: shellcheck -S warning factory.sh lib/*.sh test/*.sh scheduling/*.sh
       - run: bash test/run.sh

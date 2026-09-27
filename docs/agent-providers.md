@@ -1,10 +1,10 @@
 # Agent Providers
 
-Research on making the agent layer swappable. Option 1 below shipped: `run_agent()` in `lib/agent.sh` runs the Grok CLI (default), Claude Code, or dotbot, chosen by `DETROIT_AGENT`.
+Research on making the agent layer swappable. Option 1 below shipped: `run_agent()` in `lib/agent.sh` runs the Grok CLI (default), Claude Code, dotbot, or opencode, chosen by `DETROIT_AGENT`.
 
 ## Current coupling
 
-Every stage (TRIAGE, PLAN, CODE, FIX, CI FIX, VERIFY) calls `run_agent()` in `lib/agent.sh`. It picks the CLI from `DETROIT_AGENT` (`grok` default, `claude`, `dotbot`) and parses each CLI's stream format. `DETROIT_MODEL` sets the model for every call, for every agent. The prompts are model-agnostic. The pipeline logic (task routing, branching, linting, CI gating, PR creation) is plain shell with `git` and `gh`.
+Every stage (TRIAGE, PLAN, CODE, FIX, CI FIX, VERIFY) calls `run_agent()` in `lib/agent.sh`. It picks the CLI from `DETROIT_AGENT` (`grok` default, `claude`, `dotbot`, `opencode`) and parses each CLI's stream format. `DETROIT_MODEL` sets the model for every call, for every agent. The prompts are model-agnostic. The pipeline logic (task routing, branching, linting, CI gating, PR creation) is plain shell with `git` and `gh`.
 
 Originally `factory.sh` called `claude -p "prompt" --dangerously-skip-permissions` directly in 6 places.
 
@@ -21,6 +21,17 @@ Originally `factory.sh` called `claude -p "prompt" --dangerously-skip-permission
 opencode and Cursor lack headless modes — not viable as CLIs.
 
 Only Codex CLI is sandboxed by default. Grok, Claude, Gemini, and aider give unrestricted filesystem + shell access. If the runner is the sandbox (GitHub Actions, Modal), the CLI's own sandbox doesn't matter.
+
+## opencode on a local model
+
+`DETROIT_AGENT=opencode` runs `opencode run --auto --format json -m <model> -- "<prompt>"` and parses the JSON events (`text`, `tool_use`, `error`).
+
+- `DETROIT_MODEL` is `provider/model` as opencode names it. Default: `studio/mlx-community/Qwen3-Coder-Next-4bit`, the MLX model a Mac Studio serves at `http://127.0.0.1:8090/v1`.
+- `--auto` approves every permission that is not explicitly denied. Same trust level as the other CLIs: no sandbox.
+- A stage timeout kills the CLI as well as ending the read. A local model that stalls writes nothing, so it would never notice the closed pipe.
+- Preflight: before PICK, and before each `--shift` task, `agent_preflight` does `GET $DETROIT_MODEL_ENDPOINT/models` (default `http://127.0.0.1:8090/v1`, 10s). If it fails the run logs `Model endpoint down` and exits 0. Set `DETROIT_MODEL_ENDPOINT=none` when opencode points at a hosted model.
+- No usage window: `--shift` skips the Omarchy usage record and stops on an empty queue or `DETROIT_SHIFT_MAX_HOURS` (default 6). See [budget-shift.md](budget-shift.md).
+- The stage timeouts (TRIAGE 60s, PLAN and FIX 120s) were sized for hosted models. A local model has less room inside them.
 
 ## OpenCode as a runtime (Ramp's approach)
 
@@ -42,7 +53,7 @@ OpenCode advantages over CLI swapping:
 
 ### 1. Swap CLI flags (minimal) — shipped
 
-Abstract the call sites into a `run_agent()` function. Config var `DETROIT_AGENT` selects the CLI and flags. Shipped with `grok` (default), `claude`, and `dotbot`; codex, gemini, and aider are not wired up.
+Abstract the call sites into a `run_agent()` function. Config var `DETROIT_AGENT` selects the CLI and flags. Shipped with `grok` (default), `claude`, `dotbot`, and `opencode`; codex, gemini, and aider are not wired up.
 
 Pros: simple, no new deps, keeps shell script identity
 Cons: each CLI has different streaming formats, error handling, quirks
@@ -65,7 +76,7 @@ Cons: vendor lock-in, can't use cheaper/faster models per task
 
 The sandbox (where code runs) and the agent (what runs the code) are orthogonal:
 
-- **Local + Grok (default), Claude, or dotbot** — current state
+- **Local + Grok (default), Claude, dotbot, or opencode** — current state
 - **GitHub Actions + one CLI** — isolation without changing agent
 - **GitHub Actions + any CLI** — isolation + swappable agent
 - **Modal + OpenCode** — Ramp's approach, maximum flexibility

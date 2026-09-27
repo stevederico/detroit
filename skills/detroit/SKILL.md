@@ -19,6 +19,8 @@ bash factory.sh                  # run the next task from tasks/
 bash factory.sh --dry-run        # resolve task/repo/branch, print prompt, run nothing
 bash factory.sh --parallel 3     # spawn 3 factory agents (worktree-isolated)
 bash factory.sh --shift          # run tasks one by one until the usage window hits DETROIT_BUDGET_STOP
+DETROIT_AGENT=opencode bash factory.sh --shift   # local model: until the queue is empty or DETROIT_SHIFT_MAX_HOURS
+bash scheduling/install.sh       # nightly systemd user timer (01:00) for the opencode shift
 bash factory.sh --repo NAME      # only run tasks whose frontmatter repo: matches NAME
 bash factory.sh --issues owner/repo       # pull open issues labeled detroit into tasks/
 bash factory.sh --verify owner/repo       # screenshot all open PRs
@@ -28,6 +30,11 @@ bash factory.sh --verify owner/repo 42    # screenshot one PR
 Flags combine (e.g. `--parallel 2 --dry-run`). `parallel` / `verify` / `issues`
 are mutually exclusive — last one wins (`lib/args.sh`). `--shift` combines only
 with `--dry-run` and `--repo`; pairing it with the others exits 2.
+
+Nightly timer: `detroit-nightly.timer` starts `DETROIT_AGENT=opencode
+factory.sh --shift` at 01:00 and appends to `logs/nightly.log`. Check it with
+`systemctl --user list-timers | grep detroit`; run it now with
+`systemctl --user start detroit-nightly.service` (`docs/scheduling.md`).
 
 ## Task Format
 
@@ -124,8 +131,10 @@ opens the diff-detected target route, screenshots, prints
 ## Knobs
 
 ```bash
-DETROIT_AGENT=grok|claude|dotbot   # default grok
-DETROIT_MODEL=...                  # model for every call (all agents)
+DETROIT_AGENT=grok|claude|dotbot|opencode   # default grok; opencode = local model
+DETROIT_MODEL=...                  # model for every call (all agents); opencode takes provider/model
+DETROIT_MODEL_ENDPOINT=http://127.0.0.1:8090/v1   # opencode preflight URL; "none" skips it
+DETROIT_SHIFT_MAX_HOURS=6          # opencode --shift starts no task after this many hours
 DETROIT_CODE_TIMEOUT=3600          # CODE stage seconds
 DETROIT_TEST_CMD="npm test --silent"
 DETROIT_TEST_TIMEOUT=300

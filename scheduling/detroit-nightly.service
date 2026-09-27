@@ -1,0 +1,18 @@
+# Nightly Detroit shift on the local model (opencode). Install with
+# scheduling/install.sh, which points the paths below at this checkout.
+[Unit]
+Description=Detroit nightly shift (opencode, local model)
+Documentation=https://github.com/stevederico/detroit/blob/master/docs/scheduling.md
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Projects/detroit
+Environment=DETROIT_AGENT=opencode
+# The user manager's PATH depends on what the desktop session imported: say it here
+Environment=PATH=%h/.local/bin:%h/.local/share/mise/shims:/usr/local/bin:/usr/bin
+ExecStart=/usr/bin/bash %h/Projects/detroit/factory.sh --shift
+StandardOutput=append:%h/Projects/detroit/logs/nightly.log
+StandardError=append:%h/Projects/detroit/logs/nightly.log
+# DETROIT_SHIFT_MAX_HOURS (6) stops new tasks; this is the hard stop behind it
+TimeoutStartSec=8h
+TimeoutStopSec=30s

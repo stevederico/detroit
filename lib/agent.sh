@@ -1,12 +1,34 @@
 # shellcheck shell=bash
-# lib/agent.sh — agent CLI invocation (claude, dotbot, grok).
+# lib/agent.sh — agent CLI invocation (claude, dotbot, grok, opencode).
 
 # ── Agent configuration ───────────────────────────────────
-# DETROIT_AGENT: grok (default), claude, dotbot
+# DETROIT_AGENT: grok (default), claude, dotbot, opencode
 # DETROIT_PROVIDER: xai (default) — provider for dotbot (xai, anthropic, openai, ollama)
 # DETROIT_MODEL: model for every call (grok needs XAI_API_KEY set). For claude it
 #   replaces the caller's --model alias, so --shift checks the budget it spends.
+#   For opencode it is provider/model (default: the local Studio model below).
+# DETROIT_MODEL_ENDPOINT: OpenAI-style base URL agent_preflight checks for
+#   opencode (default http://127.0.0.1:8090/v1); "none" skips the check.
 DETROIT_CLI="${DETROIT_AGENT:-grok}"
+OPENCODE_DEFAULT_MODEL="studio/mlx-community/Qwen3-Coder-Next-4bit"
+OPENCODE_DEFAULT_ENDPOINT="http://127.0.0.1:8090/v1"
+
+# agent_is_local — true when the agent runs on a local model: no usage window
+# to budget against (lib/shift.sh), and an endpoint that can be down.
+agent_is_local() { [ "${DETROIT_AGENT:-grok}" = opencode ]; }
+
+# agent_preflight — true when the agent's model can be reached. Only opencode
+# has a check: GET <endpoint>/models, cut off after DETROIT_PREFLIGHT_TIMEOUT
+# (10s). On failure logs the endpoint and curl's error and returns 1.
+agent_preflight() {
+  agent_is_local || return 0
+  local endpoint="${DETROIT_MODEL_ENDPOINT:-$OPENCODE_DEFAULT_ENDPOINT}" err rc=0
+  [ "$endpoint" = none ] && return 0
+  err=$(curl -fsS -o /dev/null -m "${DETROIT_PREFLIGHT_TIMEOUT:-10}" "${endpoint%/}/models" 2>&1) || rc=$?
+  [ "$rc" = 0 ] && return 0
+  log "Model endpoint down: ${endpoint%/}/models (curl rc=$rc${err:+, $err})"
+  return 1
+}
 
 # run_agent <prompt_file> [--model <model>] [--timeout <secs>] [--timeout-msg <msg>] [--verbose]
 # Runs the configured agent CLI and streams parsed output to stdout.
@@ -116,6 +138,52 @@ for line in sys.stdin:
         text = content.get('text', '') if isinstance(content, dict) else ''
         if text: print(text, end='', flush=True)
 print('', flush=True)
+"
+      ;;
+    opencode)
+      # opencode headless (`opencode run`). Like grok, ignores the caller's
+      # --model alias (claude-specific) and honors DETROIT_MODEL. --auto
+      # approves every permission that is not explicitly denied. Lines that
+      # are not JSON events (the mise wrapper's banner) are dropped.
+      local -a args=(opencode run --auto --format json -m "${DETROIT_MODEL:-$OPENCODE_DEFAULT_MODEL}")
+      # The parser's alarm only ends the read. A local model that has gone
+      # quiet never hits the closed pipe, so the CLI itself is cut off too.
+      if [ "$timeout_secs" -gt 0 ] 2>/dev/null; then
+        args=(with_timeout "$((timeout_secs + 2))" "${args[@]}")
+      fi
+
+      "${args[@]}" -- "$prompt" 2>/dev/null | \
+        python3 -uc "
+import sys, json, signal
+timeout = $timeout_secs
+tmsg = '''$timeout_msg'''
+if timeout > 0:
+    signal.alarm(timeout)
+    signal.signal(signal.SIGALRM, lambda *_: (print(tmsg, flush=True), sys.exit(0)))
+labels = {'read': 'Reading', 'edit': 'Editing', 'write': 'Writing'}
+for line in sys.stdin:
+    line = line.strip()
+    if not line: continue
+    try: event = json.loads(line)
+    except: continue
+    if not isinstance(event, dict): continue
+    etype = event.get('type', '')
+    part = event.get('part') or {}
+    if etype == 'text':
+        text = part.get('text', '').strip()
+        if text: print(text, flush=True)
+    elif etype == 'tool_use':
+        name = part.get('tool', '')
+        inp = (part.get('state') or {}).get('input') or {}
+        if name in labels: print(f'  {labels[name]} {inp.get(\"filePath\", \"?\")}'.rstrip(), flush=True)
+        elif name == 'bash': print(f'  Running: {inp.get(\"command\", \"\")[:120]}'.rstrip(), flush=True)
+        elif name == 'grep': print(f'  Searching: {inp.get(\"pattern\", \"?\")}'.rstrip(), flush=True)
+        elif name == 'glob': print(f'  Finding: {inp.get(\"pattern\", \"?\")}'.rstrip(), flush=True)
+        else: print(f'  Tool: {name}'.rstrip(), flush=True)
+    elif etype == 'error':
+        err = event.get('error') or {}
+        msg = (err.get('data') or {}).get('message') or err.get('name') or 'unknown'
+        print(f'opencode error: {msg}', flush=True)
 "
       ;;
     *)

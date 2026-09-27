@@ -1,5 +1,15 @@
 # Changelog
 
+0.63.0
+
+  Add opencode agent
+  Add local shift
+  Add hours cap
+  Add endpoint preflight
+  Add nightly timer
+  Add opencode tests
+  Document nightly run
+
 0.62.0
 
   Update agent providers

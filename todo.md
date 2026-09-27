@@ -8,13 +8,14 @@ Updated with insights from AIE-26 code factory discussions (Ramp Inspect, Stripe
 - [x] `tasks/` folder queue with priority
 - [x] Screenshot verification (agent-browser + diff analysis)
 - [x] CI gate with fix loop (max attempts)
-- [x] Multi-provider support (Claude Code, dotbot, Grok CLI)
+- [x] Multi-provider support (Claude Code, dotbot, Grok CLI, opencode on a local model)
 - [x] `factory.md` spec (8 sections: style, build, testing, documentation, environment, quality, observability, security)
 - [x] Declarative stages (triage → plan → build → test → ship → monitor)
 - [x] Strict rules with `!` prefix (must pass deterministically)
 - [x] Web UI ("factory floor"): live agents, streaming logs, task queue, plan approval gate
 - [x] Standalone `factory-md` spec repo published
 - [x] Budget shift (`--shift`): run tasks while the usage window has room
+- [x] Nightly job: systemd user timer runs the opencode shift at 01:00 (`scheduling/`)
 
 ## Pending / Next
 

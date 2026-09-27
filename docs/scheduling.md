@@ -1,4 +1,52 @@
-# Scheduling via dotbot
+# Scheduling
+
+Two parts: the nightly systemd timer that ships today, and the older research on scheduling through dotbot.
+
+## Nightly timer (systemd, opencode on a local model)
+
+`scheduling/` holds a systemd user service and timer. Every night at 01:00 local time the timer starts one shift on the local model:
+
+```bash
+DETROIT_AGENT=opencode ./factory.sh --shift
+```
+
+Install, from the detroit repo root:
+
+```bash
+bash scheduling/install.sh               # copy units, point them at this checkout, enable the timer
+bash scheduling/install.sh --uninstall   # disable and remove them
+```
+
+| File | What it does |
+|---|---|
+| `scheduling/detroit-nightly.timer` | `OnCalendar=*-*-* 01:00:00`, `Persistent=true` (a run missed while the machine was off starts at next boot) |
+| `scheduling/detroit-nightly.service` | `Type=oneshot`, sets `DETROIT_AGENT=opencode` and `PATH`, runs `factory.sh --shift`, appends output to `logs/nightly.log` |
+| `scheduling/install.sh` | Writes both units to `~/.config/systemd/user/` with this checkout's path, then `enable --now` on the timer |
+
+What a night looks like:
+
+1. The shift takes `.shift.lock`. A second shift exits at once.
+2. It checks the model endpoint (`curl $DETROIT_MODEL_ENDPOINT/models`, default `http://127.0.0.1:8090/v1`). Down: it logs `Model endpoint down` and exits 0.
+3. It runs the next task in `tasks/`, the same pipeline as a no-flag `factory.sh`.
+4. It repeats until the queue is empty, every task left has already run this shift, or `DETROIT_SHIFT_MAX_HOURS` (default 6) have passed. A task already started runs to its end. The service's `TimeoutStartSec=8h` is the hard stop.
+
+Logs:
+
+- `logs/nightly.log`: everything the service printed, all nights
+- `logs/<timestamp>-shift.log`: one shift
+- `logs/<timestamp>-w0.log`: one task
+
+Useful commands:
+
+```bash
+systemctl --user list-timers | grep detroit      # next and last run
+systemctl --user start detroit-nightly.service   # run a shift now
+systemctl --user status detroit-nightly.service  # last result
+```
+
+To change the knobs, add `Environment=` lines with `systemctl --user edit detroit-nightly.service` (for example `DETROIT_SHIFT_MAX_HOURS=4` or `DETROIT_REPO=my-app`). The user manager only runs while you are logged in, unless lingering is on (`loginctl enable-linger`).
+
+# Scheduling via dotbot (research)
 
 Detroit needs a daemon mode (`--watch`) to auto-process new task files. dotbot already has a cron-like job scheduler (`schedule_job`, `list_jobs`, `toggle_job`, `cancel_job`) that fires prompts through the agent loop on recurring intervals.
 

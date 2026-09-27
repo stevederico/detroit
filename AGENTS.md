@@ -5,10 +5,11 @@ Autonomous code factory that reads task files from `tasks/` and ships them as PR
 ## Structure
 
 - `factory.sh` — entry point. Parses flags, sources `lib/`, dispatches modes. Reads rules from `factory.md` and enforces them.
-- `lib/` — pipeline modules: `core.sh` (logging/status/resolve_gh_repo/lessons/cleanup), `args.sh`, `factory-md.sh`, `gates.sh`, `agent.sh`, `devserver.sh`, `modes.sh`, `verify-prs.sh`, `shift.sh` (--shift budget loop), `shipped.sh` (verify_shipped), `code-stage.sh` (TRIAGE→CODE), `pipeline.sh` (PICK→SHIP), `postship.sh` (CI→DONE).
+- `lib/` — pipeline modules: `core.sh` (logging/status/resolve_gh_repo/lessons/cleanup), `args.sh`, `factory-md.sh`, `gates.sh`, `agent.sh` (run_agent: grok/claude/dotbot/opencode, agent_preflight), `devserver.sh`, `modes.sh`, `verify-prs.sh`, `shift.sh` (--shift budget loop; opencode runs to an hours cap), `shipped.sh` (verify_shipped), `code-stage.sh` (TRIAGE→CODE), `pipeline.sh` (PICK→SHIP), `postship.sh` (CI→DONE).
 - `factory.md` — portable spec of the standards the agent must follow. 8 H2 sections: `## style`, `## build`, `## testing`, `## documentation`, `## environment`, `## quality`, `## observability`, `## security`. Each bullet is one rule. Spec: https://github.com/stevederico/factory-md
 - `tasks/` — task queue. One markdown file per task. Success → `tasks/done/`; shipped but quality-failed → `tasks/failed/`.
 - `lessons.md` — durable one-line failures (gates/CI/verify); last lines injected into CODE prompts.
+- `scheduling/` — systemd user service + timer for the nightly opencode shift (`bash scheduling/install.sh`).
 - `test/` — self-test suite (`bash test/run.sh`); runs with shellcheck in this repo's CI.
 - `logs/` — timestamped logs per run (gitignored)
 

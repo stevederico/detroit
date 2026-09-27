@@ -13,6 +13,7 @@ mkdir -p "$TASK_DIR/done" "$TASK_DIR/failed" "$LOCK_DIR"
 TASK_FILE=""; WORKTREE_DIR=""
 DRY_RUN=false; REPO_FILTER=""
 . "$DETROIT_ROOT/lib/core.sh"
+. "$DETROIT_ROOT/lib/agent.sh"
 . "$DETROIT_ROOT/lib/shift.sh"
 log() { echo "$1" >> "$LOGFILE"; }
 stage() { :; }
@@ -21,10 +22,12 @@ export XDG_STATE_HOME="$TESTDIR/state"
 USAGE_DIR="$XDG_STATE_HOME/omarchy/agents/usage"
 mkdir -p "$USAGE_DIR"
 unset DETROIT_AGENT DETROIT_MODEL DETROIT_BUDGET_STOP DETROIT_USAGE_MAX_AGE DETROIT_SHIFT_SKIP
+unset DETROIT_SHIFT_MAX_HOURS DETROIT_MODEL_ENDPOINT
 export DETROIT_SHIFT_PAUSE=0
 
-# Never reach the real Herdr or the real Omarchy collectors
+# Never reach the real Herdr, the real Omarchy collectors, or a real model endpoint
 stub_bin herdr 'exit 1'
+stub_bin curl 'exit 0'
 stub_bin omarchy-agent-usage-update "echo called >> '$TESTDIR/refreshes'"
 
 now_iso() { python3 -c 'import datetime as d; print(d.datetime.now(d.timezone.utc).isoformat())'; }
@@ -208,6 +211,57 @@ assert_eq "a.md" "$(runs)" "--repo filter scopes the shift"
 reset_tasks; add_task "fix login bug.md"; add_task z.md
 FAKE_CHILD=ship run_shift
 assert_eq "fix login bug.md z.md" "$(runs)" "task names with spaces"
+
+echo "local agent (opencode):"
+# No usage record exists for a local model: the shift must not look for one
+reset_tasks; add_task a.md; add_task b.md; rm -f "$USAGE_DIR"/*.json
+DETROIT_AGENT=opencode FAKE_CHILD=ship run_shift
+assert_eq 0 "$RC" "opencode, no usage record: exit 0"
+assert_eq "a.md b.md" "$(runs)" "opencode runs the queue without a usage record"
+assert_eq 0 "$(count "$TESTDIR/refreshes")" "opencode never refreshes usage"
+assert_contains "$LOG" "local model, no usage window  max: 6h" "opencode logs the default 6h cap"
+assert_contains "$LOG" "idle — no tasks" "opencode stops when the queue drains"
+
+reset_tasks; add_task a.md; add_task b.md
+DETROIT_AGENT=opencode FAKE_RC=1 run_shift
+assert_eq "a.md b.md" "$(runs)" "opencode: a task already run is not rerun"
+assert_contains "$LOG" "(2 ran, 2 failed)" "opencode: failures counted"
+
+reset_tasks; add_task a.md
+DETROIT_AGENT=opencode DETROIT_SHIFT_MAX_HOURS=0 run_shift
+assert_eq "" "$(runs)" "cap already reached: no pick"
+assert_contains "$LOG" "idle — shift cap reached (0h)" "cap logged"
+
+# The clock jumps 2h per task: a 3h cap lets two tasks start, not the third
+reset_tasks; add_task a.md; add_task b.md; add_task c.md
+echo 1000000 > "$TESTDIR/clock"
+shift_now() { cat "$TESTDIR/clock"; }
+shift_sleep() { echo slept >> "$TESTDIR/sleeps"; echo $(( $(cat "$TESTDIR/clock") + 7200 )) > "$TESTDIR/clock"; }
+DETROIT_AGENT=opencode DETROIT_SHIFT_MAX_HOURS=3 FAKE_CHILD=ship run_shift
+assert_eq "a.md b.md" "$(runs)" "cap stops the shift between tasks"
+assert_contains "$LOG" "idle — shift cap reached (3h)" "cap between tasks logged"
+assert_eq "true" "$([ -f "$TASK_DIR/c.md" ] && echo true)" "task past the cap stays queued"
+echo 1000000 > "$TESTDIR/clock"
+DETROIT_AGENT=opencode DETROIT_SHIFT_MAX_HOURS=0.5 run_shift
+assert_eq "c.md" "$(runs)" "fractional cap: first task still starts"
+shift_now() { date +%s; }
+shift_sleep() { echo slept >> "$TESTDIR/sleeps"; }
+
+reset_tasks; add_task a.md
+stub_bin curl 'exit 7'
+DETROIT_AGENT=opencode run_shift
+assert_eq 0 "$RC" "endpoint down: exit 0"
+assert_eq "" "$(runs)" "endpoint down: no pick"
+assert_contains "$LOG" "Model endpoint down" "endpoint down logged"
+assert_contains "$LOG" "idle — model endpoint down" "endpoint down ends the shift"
+write_usage 0.1 0.1
+run_shift
+assert_eq "a.md" "$(runs)" "other agents ignore the model endpoint"
+stub_bin curl 'exit 0'
+
+reset_tasks; add_task a.md; write_usage 0.1 0.1
+DETROIT_SHIFT_MAX_HOURS=0 run_shift
+assert_eq "a.md" "$(runs)" "the hours cap never applies to a usage-window agent"
 
 echo "one shift at a time:"
 reset_tasks; add_task a.md

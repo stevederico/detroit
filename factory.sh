@@ -8,7 +8,7 @@
 #   args.sh       CLI flag parsing
 #   factory-md.sh factory.md section/stage/rule parsing
 #   gates.sh      deterministic rule gates
-#   agent.sh      agent CLI invocation (claude, dotbot, grok)
+#   agent.sh      agent CLI invocation (claude, dotbot, grok, opencode) + preflight
 #   devserver.sh  dev server + test-account helpers
 #   modes.sh      --parallel and --issues modes
 #   verify-prs.sh --verify mode
@@ -69,6 +69,11 @@ case "$MODE" in
   issues)   mode_issues ;;
   shift)    mode_shift ;;
   run)
+    # A local model that is not answering would fail every stage: stop before PICK
+    if [ "$DRY_RUN" != true ] && ! agent_preflight; then
+      update_status "idle — model endpoint down"
+      exit 0
+    fi
     run_pipeline
     run_postship  # its final check is the factory run's exit code
     ;;

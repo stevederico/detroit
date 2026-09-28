@@ -14,14 +14,14 @@ Originally `factory.sh` called `claude -p "prompt" --dangerously-skip-permission
 |---|---|---|---|
 | Grok CLI (default) | `-p "prompt"` headless | No | `--output-format streaming-json` |
 | Claude Code | `--dangerously-skip-permissions` | No | `--output-format stream-json` |
+| opencode | `run --auto "prompt"` headless | No | `--format json` |
 | Codex CLI | `--approval-mode full-auto` | Yes (network-disabled sandbox) | Yes |
 | Gemini CLI | `echo "prompt" \| gemini` | Optional `-s` flag | Yes |
 | aider | `--message "prompt" --yes-always` | No | Yes (default) |
-| opencode | `run --auto \"prompt\"` headless | No | `--format json` |
 
 Cursor lacks a headless mode, so it is not viable as a CLI. opencode has one (`opencode run`) and is wired up as `DETROIT_AGENT=opencode`.
 
-Only Codex CLI is sandboxed by default. Grok, Claude, Gemini, and aider give unrestricted filesystem + shell access. If the runner is the sandbox (GitHub Actions, Modal), the CLI's own sandbox doesn't matter.
+Only Codex CLI is sandboxed by default. Grok, Claude, Gemini, aider, and opencode give unrestricted filesystem + shell access. If the runner is the sandbox (GitHub Actions, Modal), the CLI's own sandbox doesn't matter.
 
 ## opencode on a local model
 
@@ -29,8 +29,8 @@ Only Codex CLI is sandboxed by default. Grok, Claude, Gemini, and aider give unr
 
 - `DETROIT_MODEL` is `provider/model` as opencode names it. Default: `studio/mlx-community/Qwen3-Coder-Next-4bit`, the MLX model a Mac Studio serves at `http://127.0.0.1:8090/v1`.
 - `--auto` approves every permission that is not explicitly denied. Same trust level as the other CLIs: no sandbox.
-- A stage timeout kills the CLI as well as ending the read. A local model that stalls writes nothing, so it would never notice the closed pipe.
-- Preflight: before PICK, and before each `--shift` task, `agent_preflight` does `GET $DETROIT_MODEL_ENDPOINT/models` (default `http://127.0.0.1:8090/v1`, 10s). If it fails the run logs `Model endpoint down` and exits 0. Set `DETROIT_MODEL_ENDPOINT=none` when opencode points at a hosted model.
+- A stage timeout kills the CLI as well as ending the read. A local model that stalls writes nothing, so it would never notice the closed pipe. `with_timeout` (`lib/core.sh`) kills the CLI's process group and the group of every descendant: opencode starts each tool command in its own session, so killing only its pid left them running.
+- Preflight: before PICK, and before each `--shift` task, `agent_preflight` checks `gh auth token` (every agent), then `GET $DETROIT_MODEL_ENDPOINT/models` (default `http://127.0.0.1:8090/v1`, 10s) and that its `data[].id` list has the model id from `DETROIT_MODEL` (the part after `provider/`). An MLX server asked for another model tries to load it, so a 200 alone is not enough. On failure the run logs why and exits 0. Set `DETROIT_MODEL_ENDPOINT=none` when opencode points at a hosted model.
 - No usage window: `--shift` skips the Omarchy usage record and stops on an empty queue or `DETROIT_SHIFT_MAX_HOURS` (default 6). See [budget-shift.md](budget-shift.md).
 - The stage timeouts (TRIAGE 60s, PLAN and FIX 120s) were sized for hosted models. A local model has less room inside them.
 

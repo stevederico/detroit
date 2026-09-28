@@ -1,5 +1,17 @@
 # Changelog
 
+0.66.0
+
+  Kill process trees
+  Pin opencode version
+  Drop timer catchup
+  Check gh auth
+  Check served model
+  Trap TERM signal
+  Pass timeouts via env
+  Fix opencode row
+  Document log rotation
+
 0.65.0
 
   Fix opencode headless doc

@@ -3,7 +3,7 @@ Description=Detroit nightly shift at 01:00
 
 [Timer]
 OnCalendar=*-*-* 01:00:00
-Persistent=true
+# No Persistent=: a night missed while the machine was off is skipped, not run at boot
 
 [Install]
 WantedBy=timers.target

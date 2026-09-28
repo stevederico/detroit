@@ -7,6 +7,8 @@
 # A local agent (DETROIT_AGENT=opencode, lib/agent.sh agent_is_local) has no
 # usage window. Its shift skips the usage record and runs until the queue is
 # empty, DETROIT_SHIFT_MAX_HOURS has passed, or the model endpoint is down.
+# Every shift stops before a task when agent_preflight fails (gh signed out,
+# local model down or not serving DETROIT_MODEL).
 #
 # Env:
 #   DETROIT_BUDGET_STOP    stop at this session/weekly fraction (default 0.80)
@@ -230,12 +232,8 @@ shift_loop() {
       continue
     fi
 
-    if [ "$is_local" = true ]; then
-      # 2-4. No usage window to read; the model has to answer instead
-      if [ "$DRY_RUN" != true ] && ! agent_preflight; then
-        shift_stop "idle — model endpoint down"; return 0
-      fi
-    else
+    # 2-4. A local model has no usage window to read
+    if [ "$is_local" != true ]; then
       # 2-3. Fresh usage or nothing; one refresh attempt
       usage=$(shift_read_usage "$file")
       case "$usage" in
@@ -268,6 +266,13 @@ shift_loop() {
       shift_stop "idle — no tasks"; return 0
     fi
     name=$(basename "$next")
+
+    # 5b. The task can start: gh signed in, local model up and serving
+    # DETROIT_MODEL (lib/agent.sh agent_preflight). Checked after the queue so
+    # an empty night logs "no tasks", not a down endpoint.
+    if [ "$DRY_RUN" != true ] && ! agent_preflight; then
+      shift_stop "idle — $PREFLIGHT_REASON"; return 0
+    fi
 
     # 6. The same path as a no-flag factory.sh. Whatever happens, this task
     # is done for this shift: shipped, failed, or left in tasks/ (dry run, or

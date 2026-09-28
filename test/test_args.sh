@@ -71,5 +71,31 @@ assert_rc 124 "hung command times out" with_timeout 1 sleep 30
 T0=$SECONDS
 assert_eq "hi" "$(with_timeout 5 echo hi)" "captured output"
 assert_eq "true" "$([ $((SECONDS - T0)) -lt 3 ] && echo true)" "capture returns without waiting on the watchdog"
+assert_rc 127 "missing command → 127" with_timeout 5 detroit-no-such-command
+
+# gone <pid> — true once pid has exited (polls 3s: an orphan waits for its reaper)
+gone() {
+  local i=0
+  while kill -0 "$1" 2>/dev/null; do
+    [ "$i" -ge 30 ] && return 1
+    sleep 0.1; i=$((i + 1))
+  done
+}
+TD=$(mktemp -d); trap 'rm -rf "$TD"' EXIT
+assert_rc 124 "timeout with a child" with_timeout 1 bash -c "sleep 60 & echo \$! > '$TD/child'; wait"
+assert_rc 0 "timeout kills the child too (npm test under bash -c)" gone "$(cat "$TD/child")"
+T0=$SECONDS
+assert_rc 124 "child ignoring TERM" env WITH_TIMEOUT_GRACE=1 bash -c ". '$DETROIT_ROOT/lib/core.sh' 2>/dev/null; with_timeout 1 bash -c \"(trap '' TERM; exec sleep 60) & echo \\\$! > '$TD/stubborn'; wait\""
+assert_rc 0 "child ignoring TERM gets KILL after the grace" gone "$(cat "$TD/stubborn")"
+assert_eq "true" "$([ $((SECONDS - T0)) -lt 8 ] && echo true)" "grace is WITH_TIMEOUT_GRACE, not 10s"
+assert_rc 124 "descendant in its own session" with_timeout 1 bash -c "python3 -c 'import os, time; os.setsid(); time.sleep(60)' & echo \$! > '$TD/session'; wait"
+assert_rc 0 "descendant in its own session is killed (opencode tool commands)" gone "$(cat "$TD/session")"
+python3 -c "$WITH_TIMEOUT_PY" 60 bash -c "sleep 60 & echo \$! > '$TD/stopped'; wait" &
+SUP=$!
+for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$TD/stopped" ] && break; sleep 0.2; done
+kill -TERM "$SUP"
+RC=0; wait "$SUP" || RC=$?
+assert_eq 143 "$RC" "TERM to the supervisor (systemd stop): dies by TERM"
+assert_rc 0 "TERM to the supervisor kills cmd's children" gone "$(cat "$TD/stopped")"
 
 summarize

@@ -59,8 +59,8 @@ export AGENT_BROWSER_HEADED=""
 
 parse_args "$@" || exit 2
 
-# Ctrl+C cleanup (cleanup() defined in lib/core.sh)
-trap cleanup INT
+# Ctrl+C and TERM (systemd stop, TimeoutStartSec) cleanup, defined in lib/core.sh
+trap cleanup INT TERM
 
 case "$MODE" in
   help)     usage; exit 0 ;;
@@ -69,9 +69,10 @@ case "$MODE" in
   issues)   mode_issues ;;
   shift)    mode_shift ;;
   run)
-    # A local model that is not answering would fail every stage: stop before PICK
-    if [ "$DRY_RUN" != true ] && ! agent_preflight; then
-      update_status "idle — model endpoint down"
+    # gh signed out or a local model not answering would fail the task:
+    # stop before PICK. An empty queue skips the check (PICK logs it).
+    if [ "$DRY_RUN" != true ] && [ -n "$(pick_task)" ] && ! agent_preflight; then
+      update_status "idle — $PREFLIGHT_REASON"
       exit 0
     fi
     run_pipeline

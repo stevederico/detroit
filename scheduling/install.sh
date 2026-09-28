@@ -4,10 +4,12 @@
 # the paths pointed at this checkout, then enables the timer. Safe to re-run.
 # Usage: bash scheduling/install.sh [--uninstall]
 #
-# opencode is pinned: the service's PATH starts with the directory of the real
-# opencode binary, so a `mise use -g` wrapper never runs (or upgrades it)
-# during a shift. OPENCODE_DIR overrides; otherwise `mise where opencode`.
-# Re-run after upgrading opencode on purpose.
+# opencode and grok are pinned: the service's PATH starts with the
+# directories of their real binaries, so a `mise use -g` wrapper never runs
+# (or upgrades them) during a shift. A grok upgrade changed its stream format
+# once already. OPENCODE_DIR / GROK_DIR override; otherwise `mise where`.
+# Grok is optional: without it the grok shift uses whatever grok is on PATH.
+# Re-run after upgrading either on purpose.
 set -u -o pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -39,9 +41,22 @@ case "$OPENCODE_DIR" in
 esac
 echo "opencode pinned: $OPENCODE_DIR ($("$OPENCODE_DIR/opencode" --version 2>/dev/null))"
 
+GROK_DIR="${GROK_DIR:-$(mise where npm:@xai-official/grok 2>/dev/null)}"
+GROK_DIR=$(cd "$GROK_DIR/node_modules/.bin" 2>/dev/null && pwd -P)
+case "$GROK_DIR" in
+  *[[:space:]%:]*) echo "error: grok path has a space, % or colon: $GROK_DIR" >&2; exit 1 ;;
+esac
+if [ -n "$GROK_DIR" ] && [ -x "$GROK_DIR/grok" ]; then
+  echo "grok pinned: $GROK_DIR"
+else
+  echo "warning: no grok install found to pin; the grok shift uses grok from PATH" >&2
+  GROK_DIR="$ROOT/scheduling"   # harmless PATH entry (no grok binary there)
+fi
+
 mkdir -p "$UNIT_DIR" "$ROOT/logs" || exit 1
 for u in $UNITS; do
-  sed -e "s|%h/Projects/detroit|$ROOT|g" -e "s|@OPENCODE_DIR@|$OPENCODE_DIR|g" "$HERE/$u" > "$UNIT_DIR/$u" || exit 1
+  sed -e "s|%h/Projects/detroit|$ROOT|g" -e "s|@OPENCODE_DIR@|$OPENCODE_DIR|g" \
+      -e "s|@GROK_DIR@|$GROK_DIR|g" "$HERE/$u" > "$UNIT_DIR/$u" || exit 1
 done
 systemctl --user daemon-reload || exit 1
 systemctl --user enable --now detroit-nightly.timer || exit 1

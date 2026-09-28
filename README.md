@@ -246,7 +246,7 @@ Detroit's pipeline is an implementation detail of `factory.sh`:
 
 ## Requirements
 
-- The [Grok CLI](https://docs.x.ai/build/cli) (default; needs `XAI_API_KEY`), [Claude Code](https://claude.ai/claude-code), [dotbot](https://github.com/stevederico/dotbot), or [opencode](https://opencode.ai) (any provider it is configured for, local models included)
+- The [Grok CLI](https://docs.x.ai/build/cli) (default; signed in with a SuperGrok subscription or `XAI_API_KEY`), [Claude Code](https://claude.ai/claude-code), [dotbot](https://github.com/stevederico/dotbot), or [opencode](https://opencode.ai) (any provider it is configured for, local models included)
 - `gh` CLI (authenticated)
 - `agent-browser` (optional, for screenshot verification)
 - Rust (optional, only to build the web UI)

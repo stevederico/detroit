@@ -4,7 +4,7 @@
 # ── Agent configuration ───────────────────────────────────
 # DETROIT_AGENT: grok (default), claude, dotbot, opencode
 # DETROIT_PROVIDER: xai (default) — provider for dotbot (xai, anthropic, openai, ollama)
-# DETROIT_MODEL: model for every call (grok needs XAI_API_KEY set). For claude it
+# DETROIT_MODEL: model for every call. For claude it
 #   replaces the caller's --model alias, so --shift checks the budget it spends.
 #   For opencode it is provider/model (default: the local Studio model below).
 # DETROIT_MODEL_ENDPOINT: OpenAI-style base URL agent_preflight checks for
@@ -153,9 +153,13 @@ for line in sys.stdin:
       fi
       ;;
     grok)
-      # Official xAI Grok CLI (`grok`). Needs XAI_API_KEY. Like dotbot, ignores
-      # the caller's --model alias (claude-specific) and honors DETROIT_MODEL.
+      # Official xAI Grok CLI (`grok`). Signs in with the subscription
+      # (~/.grok/auth.json) or XAI_API_KEY. Like dotbot, ignores the caller's
+      # --model alias (claude-specific) and honors DETROIT_MODEL.
       # Docs: https://docs.x.ai/build/cli/headless-scripting
+      # Stream formats: 1.0.40 sends {"type":"text","data":...} chunks a few
+      # words at a time and {"type":"tool_call",...} per tool; older CLIs sent
+      # params.update agent_message_chunk. Both are parsed.
       local -a args=(--no-auto-update -p "$prompt" --output-format streaming-json)
       [ -n "${DETROIT_MODEL:-}" ] && args+=(--model "$DETROIT_MODEL")
 
@@ -166,18 +170,45 @@ timeout = int(os.environ['AGENT_TIMEOUT'])
 if timeout > 0:
     signal.signal(signal.SIGALRM, lambda *_: (print(os.environ['AGENT_TIMEOUT_MSG'], flush=True), sys.exit(0)))
     signal.alarm(timeout)
-for line in sys.stdin:
-    line = line.strip()
-    if not line: continue
-    try: event = json.loads(line)
+mid_line = False
+def text(chunk):
+    global mid_line
+    if not chunk: return
+    print(chunk, end='', flush=True)
+    mid_line = not chunk.endswith('\\n')
+def line(msg):
+    global mid_line
+    if mid_line: print('', flush=True)
+    print(msg.rstrip(), flush=True)
+    mid_line = False
+def tool(name, inp):
+    path = inp.get('target_file') or inp.get('file_path') or inp.get('path') or '?'
+    if name == 'read_file': line(f'  Reading {path}')
+    elif name in ('search_replace', 'edit_file'): line(f'  Editing {path}')
+    elif name == 'write_file': line(f'  Writing {path}')
+    elif name == 'run_terminal_command': line(f'  Running: {str(inp.get(\"command\", \"\"))[:120]}')
+    elif name == 'grep': line(f'  Searching: {inp.get(\"pattern\") or inp.get(\"query\") or \"?\"}')
+    elif name == 'list_dir': line(f'  Listing {path}')
+    else: line(f'  Tool: {name}')
+for raw in sys.stdin:
+    raw = raw.strip()
+    if not raw: continue
+    try: event = json.loads(raw)
     except: continue
-    update = event.get('params', {}).get('update', {})
-    if not isinstance(update, dict): continue
-    if update.get('sessionUpdate') == 'agent_message_chunk':
-        content = update.get('content', {})
-        text = content.get('text', '') if isinstance(content, dict) else ''
-        if text: print(text, end='', flush=True)
-print('', flush=True)
+    if not isinstance(event, dict): continue
+    etype = event.get('type', '')
+    if etype == 'text':
+        text(event.get('data') or '')
+    elif etype == 'tool_call':
+        tool(event.get('toolName') or event.get('title') or '', event.get('rawInput') or {})
+    elif etype == 'error':
+        line(f'grok error: {event.get(\"message\") or event.get(\"error\") or \"unknown\"}')
+    else:
+        update = (event.get('params') or {}).get('update') or {}
+        if isinstance(update, dict) and update.get('sessionUpdate') == 'agent_message_chunk':
+            content = update.get('content') or {}
+            text(content.get('text', '') if isinstance(content, dict) else '')
+if mid_line: print('', flush=True)
 "
       ;;
     opencode)

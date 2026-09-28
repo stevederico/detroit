@@ -31,7 +31,7 @@ bash scheduling/install.sh --uninstall   # disable and remove them
 | `scheduling/night-shift.sh` | Runs `factory.sh --shift` once per agent in `DETROIT_NIGHT_AGENTS`, in order. Exit code is the number of shifts that failed |
 | `scheduling/install.sh` | Writes both units to `~/.config/systemd/user/` with this checkout's path and the pinned opencode directory, then `enable --now` on the timer |
 
-opencode is pinned. The service's `PATH` starts with the directory of the real opencode binary (`mise where opencode`, symlinks resolved, or `OPENCODE_DIR`). A `~/.local/bin/opencode` wrapper that runs `mise use -g opencode` on each call never runs, so opencode can't upgrade in the middle of a shift. Upgrade on purpose, then re-run `install.sh`.
+opencode and grok are pinned. The service's `PATH` starts with the directories of their real binaries (`mise where opencode` and `mise where npm:@xai-official/grok`, symlinks resolved, or `OPENCODE_DIR` / `GROK_DIR`). The `~/.local/bin` wrappers that run `mise use -g` on each call never run, so neither CLI can upgrade in the middle of a shift. Grok 1.0.40 changed its stream format once already. Upgrade on purpose, then re-run `install.sh`.
 
 What each shift does:
 

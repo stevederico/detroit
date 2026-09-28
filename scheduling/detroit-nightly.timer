@@ -1,5 +1,5 @@
 [Unit]
-Description=Detroit nightly shift at 01:00
+Description=Detroit nightly shifts at 01:00
 
 [Timer]
 OnCalendar=*-*-* 01:00:00

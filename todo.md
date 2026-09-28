@@ -15,7 +15,7 @@ Updated with insights from AIE-26 code factory discussions (Ramp Inspect, Stripe
 - [x] Web UI ("factory floor"): live agents, streaming logs, task queue, plan approval gate
 - [x] Standalone `factory-md` spec repo published
 - [x] Budget shift (`--shift`): run tasks while the usage window has room
-- [x] Nightly job: systemd user timer runs the opencode shift at 01:00 (`scheduling/`)
+- [x] Nightly job: systemd user timer at 01:00 runs a grok shift on leftover subscription, then the opencode shift (`scheduling/`)
 
 ## Pending / Next
 

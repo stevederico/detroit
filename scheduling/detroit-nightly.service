@@ -1,8 +1,9 @@
-# Nightly Detroit shift on the local model (opencode). Install with
+# Nightly Detroit shifts: subscription agents first, then the local model
+# (scheduling/night-shift.sh). Install with
 # scheduling/install.sh, which points the paths below at this checkout and
 # @OPENCODE_DIR@ at the pinned opencode install.
 [Unit]
-Description=Detroit nightly shift (opencode, local model)
+Description=Detroit nightly shifts (subscription leftovers, then local model)
 Documentation=https://github.com/stevederico/detroit/blob/master/docs/scheduling.md
 # The tunnel to the Studio's model server; the shift's preflight still checks it answers
 Wants=studio-mlx-tunnel.service
@@ -11,16 +12,19 @@ After=studio-mlx-tunnel.service
 [Service]
 Type=oneshot
 WorkingDirectory=%h/Projects/detroit
-Environment=DETROIT_AGENT=opencode
+# In order: grok spends what its weekly window has left under DETROIT_BUDGET_STOP,
+# then opencode on the local model takes the rest of the queue
+Environment="DETROIT_NIGHT_AGENTS=grok opencode"
 # The user manager's PATH depends on what the desktop session imported: say it here.
 # The pinned opencode dir comes first so ~/.local/bin/opencode (a wrapper that
 # runs `mise use -g opencode` on every call) can't upgrade opencode mid-run.
 Environment=PATH=@OPENCODE_DIR@:%h/.local/bin:%h/.local/share/mise/shims:/usr/local/bin:/usr/bin
-ExecStart=/usr/bin/bash %h/Projects/detroit/factory.sh --shift
+ExecStart=/usr/bin/bash %h/Projects/detroit/scheduling/night-shift.sh
 # Appends forever; see docs/scheduling.md for rotation
 StandardOutput=append:%h/Projects/detroit/logs/nightly.log
 StandardError=append:%h/Projects/detroit/logs/nightly.log
-# DETROIT_SHIFT_MAX_HOURS (6) stops new tasks; this is the hard stop behind it.
+# Hard stop for the whole night. DETROIT_SHIFT_MAX_HOURS (6) caps the local shift;
+# a subscription shift runs until its window hits DETROIT_BUDGET_STOP or the queue empties.
 # Stopping sends TERM to every process; factory.sh cleans up its lock and worktree.
 TimeoutStartSec=8h
 TimeoutStopSec=30s

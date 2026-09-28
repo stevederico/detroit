@@ -9,7 +9,7 @@ Autonomous code factory that reads task files from `tasks/` and ships them as PR
 - `factory.md` — portable spec of the standards the agent must follow. 8 H2 sections: `## style`, `## build`, `## testing`, `## documentation`, `## environment`, `## quality`, `## observability`, `## security`. Each bullet is one rule. Spec: https://github.com/stevederico/factory-md
 - `tasks/` — task queue. One markdown file per task. Success → `tasks/done/`; shipped but quality-failed → `tasks/failed/`.
 - `lessons.md` — durable one-line failures (gates/CI/verify); last lines injected into CODE prompts.
-- `scheduling/` — systemd user service + timer for the nightly opencode shift (`bash scheduling/install.sh`).
+- `scheduling/` — systemd user service + timer for the night shift: `night-shift.sh` runs a subscription shift (grok) then the local opencode shift (`DETROIT_NIGHT_AGENTS`; install with `bash scheduling/install.sh`).
 - `test/` — self-test suite (`bash test/run.sh`); runs with shellcheck in this repo's CI.
 - `logs/` — timestamped logs per run (gitignored)
 

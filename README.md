@@ -161,13 +161,13 @@ Detroit is designed to run unattended. Point cron at it and your issues get solv
 
 A shift reads Omarchy's usage record (`~/.local/state/omarchy/agents/usage/$DETROIT_AGENT.json`) and stops when the 5-hour session or the weekly window reaches `DETROIT_BUDGET_STOP` (default `0.80`). Only one shift runs at a time, so an hourly cron is safe. A task that fails or stops before SHIP runs once per shift and the rest of the queue keeps going. It sleeps while a focused Herdr workspace has the same agent working, never starts on stale usage, never replays `tasks/failed/`, and never starts on a prepaid balance. Its log is `logs/*-shift.log`. Tune with `DETROIT_SHIFT_PAUSE` (default 30s) and `DETROIT_USAGE_MAX_AGE` (default 900s). Spec: [`docs/budget-shift.md`](docs/budget-shift.md).
 
-**Nightly on a local model** — opencode runs the queue on your own hardware, so there is no usage window to watch:
+**Night shift** — at 01:00 Detroit clocks in: first it spends what your subscription window has left, then a local model takes the rest of the queue:
 
 ```bash
 bash scheduling/install.sh    # systemd user timer: every night at 01:00
 ```
 
-The timer runs `DETROIT_AGENT=opencode ./factory.sh --shift`. With opencode the shift skips the usage record and keeps going until the queue is empty or `DETROIT_SHIFT_MAX_HOURS` (default `6`) have passed. Before each task it checks that `gh` is signed in and that the model endpoint (`DETROIT_MODEL_ENDPOINT`, default `http://127.0.0.1:8090/v1`) answers and serves the model, and stops cleanly if not. The service pins opencode to the installed version so it can't upgrade mid-shift. `DETROIT_MODEL` picks the opencode model as `provider/model` (default `studio/mlx-community/Qwen3-Coder-Next-4bit`). Output goes to `logs/nightly.log`, which nothing rotates. Details: [`docs/scheduling.md`](docs/scheduling.md).
+The timer runs `scheduling/night-shift.sh`: one `--shift` per agent in `DETROIT_NIGHT_AGENTS` (default `grok opencode`), in order. The Grok shift stops at `DETROIT_BUDGET_STOP` like any budget shift, and steps aside while you are using Grok. With opencode the shift skips the usage record and keeps going until the queue is empty or `DETROIT_SHIFT_MAX_HOURS` (default `6`) have passed. Before each task it checks that `gh` is signed in and that the model endpoint (`DETROIT_MODEL_ENDPOINT`, default `http://127.0.0.1:8090/v1`) answers and serves the model, and stops cleanly if not. The service pins opencode to the installed version so it can't upgrade mid-shift. `DETROIT_MODEL` picks the opencode model as `provider/model` (default `studio/mlx-community/Qwen3-Coder-Next-4bit`). Output goes to `logs/nightly.log`, which nothing rotates. Details: [`docs/scheduling.md`](docs/scheduling.md).
 
 **Nightly batch** — run 5 tasks in parallel at 2am:
 

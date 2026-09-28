@@ -46,8 +46,16 @@ One shift is one worker. It does not spawn `--parallel` inside the loop.
 `DETROIT_AGENT=opencode` runs a local model. It has no usage record and no window that fills, so steps 2 to 4 are replaced:
 
 - Before step 1: if `DETROIT_SHIFT_MAX_HOURS` have passed since the shift started, exit 0 and log `idle — shift cap reached`. The cap is checked between tasks. A running task is not cut short.
-- In place of steps 2 to 4: check the model endpoint (`agent_preflight` in `lib/agent.sh`). If it is down, exit 0 and log `idle — model endpoint down`. `--dry-run` skips this check.
+- Steps 2 to 4 are skipped.
 - Steps 1, 5, 6, and 7 are unchanged. Every other agent keeps the usage loop above, and the hours cap never applies to them.
+
+## Preflight (0.66.0)
+
+Every shift, any agent: after step 5 finds a task and before step 6 runs it, `agent_preflight` (`lib/agent.sh`) checks the run can start. On failure, exit 0 and log the reason. `--dry-run` skips it.
+
+- `gh auth token` fails: `idle — gh not authenticated`
+- opencode only: `$DETROIT_MODEL_ENDPOINT/models` does not answer: `idle — model endpoint down`
+- opencode only: the model id from `DETROIT_MODEL` is not listed: `idle — model not served`
 
 The nightly timer in `scheduling/` runs this shift. See [scheduling.md](scheduling.md).
 

@@ -34,7 +34,10 @@ with `--dry-run` and `--repo`; pairing it with the others exits 2.
 Nightly timer: `detroit-nightly.timer` starts `DETROIT_AGENT=opencode
 factory.sh --shift` at 01:00 and appends to `logs/nightly.log`. Check it with
 `systemctl --user list-timers | grep detroit`; run it now with
-`systemctl --user start detroit-nightly.service` (`docs/scheduling.md`).
+`systemctl --user start --no-block detroit-nightly.service`
+(`docs/scheduling.md`). Before each task, `agent_preflight` stops the run
+with exit 0 when `gh` is signed out, or the local model endpoint is down or
+not serving `DETROIT_MODEL`.
 
 ## Task Format
 
@@ -134,6 +137,8 @@ opens the diff-detected target route, screenshots, prints
 DETROIT_AGENT=grok|claude|dotbot|opencode   # default grok; opencode = local model
 DETROIT_MODEL=...                  # model for every call (all agents); opencode takes provider/model
 DETROIT_MODEL_ENDPOINT=http://127.0.0.1:8090/v1   # opencode preflight URL; "none" skips it
+DETROIT_PREFLIGHT_TIMEOUT=10       # seconds per preflight call (gh, endpoint)
+WITH_TIMEOUT_GRACE=10              # seconds between TERM and KILL when a timeout fires
 DETROIT_SHIFT_MAX_HOURS=6          # opencode --shift starts no task after this many hours
 DETROIT_CODE_TIMEOUT=3600          # CODE stage seconds
 DETROIT_TEST_CMD="npm test --silent"

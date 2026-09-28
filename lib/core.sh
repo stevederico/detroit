@@ -16,19 +16,93 @@ update_status() { echo "$1" > "$STATUS_DIR/agent-$AGENT_ID"; }
 ptee() { while IFS= read -r line; do echo "$line" >> "$LOGFILE"; echo "${PREFIX}${line}"; done; }
 
 # with_timeout <secs> <cmd...> — portable timeout (macOS has no timeout(1)).
-# Runs cmd with a sleep-kill watchdog; returns 124 on timeout, else cmd's rc.
-# The watchdog's output goes to /dev/null so $(with_timeout ...) returns as
-# soon as cmd does instead of waiting on the watchdog's sleep.
+# A python3 supervisor starts cmd in a new session (setsid; macOS has no
+# setsid(1)) and waits for it. On timeout, or when the supervisor itself gets
+# INT, TERM or HUP (Ctrl+C, systemd stop), it sends TERM to cmd's process
+# group and to the group of every descendant (opencode starts each tool
+# command in its own session), waits up to WITH_TIMEOUT_GRACE seconds (10)
+# for them to exit, then sends KILL. So npm test, dev servers and tool
+# commands go with cmd. Returns 124 on timeout or any signal death, 127 when
+# cmd is not found, else cmd's rc. cmd must be an executable, not a shell
+# function. The supervisor exits with cmd, so $(with_timeout ...) returns as
+# soon as cmd does.
+WITH_TIMEOUT_PY='
+import os, signal, subprocess, sys, time
+
+class Stop(Exception):
+    pass
+
+def on_signal(signum, _frame):
+    raise Stop(signum)
+
+def tree_groups(root):
+    # Process groups of root and every descendant, never our own
+    try:
+        out = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,pgid="],
+                             capture_output=True, text=True).stdout
+    except OSError:
+        out = ""
+    kids, pgid = {}, {}
+    for line in out.splitlines():
+        f = line.split()
+        if len(f) == 3 and all(x.isdigit() for x in f):
+            pid, ppid, g = map(int, f)
+            kids.setdefault(ppid, []).append(pid)
+            pgid[pid] = g
+    groups, todo = {root}, [root]
+    while todo:
+        for c in kids.get(todo.pop(), []):
+            todo.append(c)
+            groups.add(pgid.get(c, c))
+    groups.discard(os.getpgrp())
+    return groups
+
+def signal_groups(groups, sig):
+    alive = set()
+    for g in groups:
+        try:
+            os.killpg(g, sig)
+            alive.add(g)
+        except (ProcessLookupError, PermissionError):
+            pass
+    return alive
+
+def stop(child, grace):
+    for s in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        signal.signal(s, signal.SIG_IGN)
+    groups = signal_groups(tree_groups(child.pid), signal.SIGTERM)
+    deadline = time.monotonic() + grace
+    while groups and time.monotonic() < deadline:
+        child.poll()  # reap the leader so its group can empty
+        time.sleep(0.2)
+        groups = signal_groups(groups, 0)
+    signal_groups(groups, signal.SIGKILL)
+    child.poll()
+
+secs, grace = float(sys.argv[1]), float(os.environ.get("WITH_TIMEOUT_GRACE") or 10)
+try:
+    child = subprocess.Popen(sys.argv[2:], start_new_session=True)
+except OSError as e:
+    sys.stderr.write("%s: %s\n" % (sys.argv[2], e.strerror))
+    sys.exit(127 if isinstance(e, FileNotFoundError) else 126)
+for s in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+    signal.signal(s, on_signal)
+try:
+    rc = child.wait(timeout=secs)
+except subprocess.TimeoutExpired:
+    stop(child, grace)
+    sys.exit(124)
+except Stop as e:
+    stop(child, grace)
+    signal.signal(e.args[0], signal.SIG_DFL)
+    os.kill(os.getpid(), e.args[0])
+    sys.exit(128 + e.args[0])
+sys.exit(128 - rc if rc < 0 else rc)
+'
 with_timeout() {
   local secs="$1"; shift
-  "$@" &
-  local pid=$!
-  ( sleep "$secs"; kill -TERM "$pid" 2>/dev/null ) >/dev/null 2>&1 &
-  local dog=$!
   local rc=0
-  wait "$pid" || rc=$?
-  kill "$dog" 2>/dev/null
-  wait "$dog" 2>/dev/null
+  python3 -c "$WITH_TIMEOUT_PY" "$secs" "$@" || rc=$?
   [ "$rc" -ge 128 ] && rc=124
   return "$rc"
 }
@@ -127,7 +201,7 @@ quality_fail() {
   log "QUALITY_OK=false — $1: $2"
 }
 
-# Ctrl+C cleanup (trap installed by factory.sh)
+# Ctrl+C / TERM cleanup (trap installed by factory.sh)
 cleanup() {
   echo "" | ptee
   log "━━━ CANCELLED ━━━"

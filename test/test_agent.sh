@@ -54,38 +54,69 @@ assert_contains "$OUT" "-m studio-ollama/nemotron3:33b-64k" "DETROIT_MODEL appli
 
 stub_bin opencode 'exec sleep 30'
 T0=$SECONDS
-OUT=$(env DETROIT_AGENT=opencode bash -c "AGENT_ID=0; LOGFILE='$LOGFILE'; . '$DETROIT_ROOT/lib/core.sh'; . '$DETROIT_ROOT/lib/agent.sh'; run_agent '$PROMPT' --timeout 1 --timeout-msg 'too slow'")
-assert_contains "$OUT" "too slow" "opencode honors --timeout"
+OUT=$(env DETROIT_AGENT=opencode bash -c "AGENT_ID=0; LOGFILE='$LOGFILE'; . '$DETROIT_ROOT/lib/core.sh'; . '$DETROIT_ROOT/lib/agent.sh'; run_agent '$PROMPT' --timeout 1 --timeout-msg \"it's '''late''' now\"")
+assert_contains "$OUT" "it's '''late''' now" "opencode honors --timeout; quotes in the message reach the parser intact"
 assert_eq "true" "$([ $((SECONDS - T0)) -lt 10 ] && echo true)" "timed-out opencode call returns"
+OUT=$(env DETROIT_AGENT=grok bash -c "AGENT_ID=0; LOGFILE='$LOGFILE'; . '$DETROIT_ROOT/lib/core.sh'; . '$DETROIT_ROOT/lib/agent.sh'; run_agent '$PROMPT' --timeout 5s")
+assert_contains "$OUT" "--timeout '5s' is not whole seconds" "non-numeric --timeout is logged"
+assert_contains "$OUT" "grok " "non-numeric --timeout still runs the agent"
 
 echo "agent_preflight:"
 # preflight <env...> -- agent_preflight in a fresh shell; prints the log lines
 preflight() {
   env "$@" bash -c "AGENT_ID=0; LOGFILE='$LOGFILE'; . '$DETROIT_ROOT/lib/core.sh'; . '$DETROIT_ROOT/lib/agent.sh'; agent_preflight"
 }
+MODELS='{"object":"list","data":[{"id":"mlx-community/Qwen3-Coder-Next-4bit"},{"id":"nemotron3:33b-64k"}]}'
+stub_bin gh "echo \"\$*\" >> '$TESTDIR/ghs'; exit 0"
 stub_bin curl "echo \"\$*\" >> '$TESTDIR/curls'; exit 7"
-assert_rc 0 "grok (default) has no preflight" preflight -u DETROIT_AGENT
-assert_rc 0 "claude has no preflight" preflight DETROIT_AGENT=claude
+assert_rc 0 "grok (default): gh signed in passes" preflight -u DETROIT_AGENT
+assert_rc 0 "claude: gh signed in passes" preflight DETROIT_AGENT=claude
+assert_contains "$(cat "$TESTDIR/ghs")" "auth token" "preflight asks gh for a token"
 assert_eq "false" "$([ -f "$TESTDIR/curls" ] && echo true || echo false)" "other agents never call the endpoint"
+stub_bin gh 'exit 1'
+OUT=$(preflight -u DETROIT_AGENT); RC=$?
+assert_eq 1 "$RC" "grok + gh signed out: fails"
+assert_contains "$OUT" "gh not authenticated" "gh signed out is logged"
+OUT=$(preflight DETROIT_AGENT=opencode); RC=$?
+assert_eq 1 "$RC" "opencode + gh signed out: fails"
+assert_eq "false" "$([ -f "$TESTDIR/curls" ] && echo true || echo false)" "gh signed out: endpoint never called"
+stub_bin gh 'exit 0'
 OUT=$(preflight -u DETROIT_MODEL_ENDPOINT DETROIT_AGENT=opencode); RC=$?
 assert_eq 1 "$RC" "opencode + endpoint down: fails"
 assert_contains "$OUT" "Model endpoint down: http://127.0.0.1:8090/v1/models" "endpoint down is logged with the URL"
 assert_contains "$(cat "$TESTDIR/curls")" "http://127.0.0.1:8090/v1/models" "default endpoint is the Studio tunnel"
 assert_rc 0 "DETROIT_MODEL_ENDPOINT=none skips the check" preflight DETROIT_AGENT=opencode DETROIT_MODEL_ENDPOINT=none
-stub_bin curl "echo \"\$*\" >> '$TESTDIR/curls'; exit 0"
-assert_rc 0 "opencode + endpoint up: passes" preflight DETROIT_AGENT=opencode DETROIT_MODEL_ENDPOINT=http://10.0.0.5:9000/v1/
+stub_bin curl "echo \"\$*\" >> '$TESTDIR/curls'; printf '%s\n' '$MODELS'"
+assert_rc 0 "opencode + default model served: passes" preflight -u DETROIT_MODEL DETROIT_AGENT=opencode DETROIT_MODEL_ENDPOINT=http://10.0.0.5:9000/v1/
 assert_contains "$(cat "$TESTDIR/curls")" "http://10.0.0.5:9000/v1/models" "DETROIT_MODEL_ENDPOINT honored"
+assert_rc 0 "provider/ prefix stripped before matching" preflight DETROIT_AGENT=opencode DETROIT_MODEL=studio-ollama/nemotron3:33b-64k
+OUT=$(preflight DETROIT_AGENT=opencode DETROIT_MODEL=studio/mlx-community/Qwen3.8-27B-4bit); RC=$?
+assert_eq 1 "$RC" "model not in /models: fails"
+assert_contains "$OUT" "Model not served: mlx-community/Qwen3.8-27B-4bit" "model not served is logged"
+stub_bin curl 'echo "<html>proxy error</html>"'
+assert_rc 1 "HTTP 200 that is not a model list: fails" preflight DETROIT_AGENT=opencode
 
 echo "factory.sh preflight:"
-# Real entry point against a copied tree: endpoint down stops a run before PICK
+# Real entry point against a copied tree: a failed preflight stops a run before PICK
 mkdir -p "$TESTDIR/tree/tasks"
 cp -R "$DETROIT_ROOT/factory.sh" "$DETROIT_ROOT/lib" "$TESTDIR/tree/"
-echo "task" > "$TESTDIR/tree/tasks/a.md"
 stub_bin curl 'exit 7'
+OUT=$(DETROIT_AGENT=opencode DETROIT_DIR="$TESTDIR/tree" bash "$TESTDIR/tree/factory.sh" 2>&1); RC=$?
+assert_eq 0 "$RC" "empty queue, endpoint down: exit 0"
+assert_not_contains "$OUT" "Model endpoint down" "empty queue: no preflight"
+assert_contains "$OUT" "No pending tasks" "empty queue: PICK logs it"
+echo "task" > "$TESTDIR/tree/tasks/a.md"
 OUT=$(DETROIT_AGENT=opencode DETROIT_DIR="$TESTDIR/tree" bash "$TESTDIR/tree/factory.sh" 2>&1); RC=$?
 assert_eq 0 "$RC" "endpoint down: exit 0"
 assert_contains "$OUT" "Model endpoint down" "endpoint down: logged"
 assert_not_contains "$OUT" "PICK" "endpoint down: pipeline never picks"
 assert_eq "true" "$([ -f "$TESTDIR/tree/tasks/a.md" ] && echo true)" "endpoint down: task left in place"
+stub_bin gh 'exit 1'
+OUT=$(DETROIT_AGENT=grok DETROIT_DIR="$TESTDIR/tree" bash "$TESTDIR/tree/factory.sh" 2>&1); RC=$?
+assert_eq 0 "$RC" "gh signed out: exit 0"
+assert_contains "$OUT" "gh not authenticated" "gh signed out: logged"
+assert_not_contains "$OUT" "PICK" "gh signed out: pipeline never picks"
+assert_contains "$(cat "$TESTDIR/tree/.status/agent-0")" "idle — gh not authenticated" "gh signed out: status says why"
+stub_bin gh 'exit 0'
 
 summarize

@@ -27,7 +27,9 @@ export DETROIT_SHIFT_PAUSE=0
 
 # Never reach the real Herdr, the real Omarchy collectors, or a real model endpoint
 stub_bin herdr 'exit 1'
-stub_bin curl 'exit 0'
+stub_bin gh 'exit 0'
+MODELS='{"data":[{"id":"mlx-community/Qwen3-Coder-Next-4bit"}]}'
+stub_bin curl "printf '%s\n' '$MODELS'"
 stub_bin omarchy-agent-usage-update "echo called >> '$TESTDIR/refreshes'"
 
 now_iso() { python3 -c 'import datetime as d; print(d.datetime.now(d.timezone.utc).isoformat())'; }
@@ -257,7 +259,31 @@ assert_contains "$LOG" "idle — model endpoint down" "endpoint down ends the sh
 write_usage 0.1 0.1
 run_shift
 assert_eq "a.md" "$(runs)" "other agents ignore the model endpoint"
-stub_bin curl 'exit 0'
+
+reset_tasks
+DETROIT_AGENT=opencode run_shift
+assert_contains "$LOG" "idle — no tasks" "empty queue, endpoint down: ends on no tasks"
+assert_not_contains "$LOG" "Model endpoint down" "empty queue: no preflight"
+stub_bin curl "printf '%s\n' '$MODELS'"
+
+reset_tasks; add_task a.md
+DETROIT_AGENT=opencode DETROIT_MODEL=studio/other-model run_shift
+assert_eq "" "$(runs)" "model not served: no pick"
+assert_contains "$LOG" "idle — model not served" "model not served ends the shift"
+
+stub_bin gh 'exit 1'
+reset_tasks; add_task a.md
+DETROIT_AGENT=opencode run_shift
+assert_eq 0 "$RC" "gh signed out: exit 0"
+assert_eq "" "$(runs)" "opencode + gh signed out: no pick"
+assert_contains "$LOG" "idle — gh not authenticated" "opencode + gh signed out logged"
+write_usage 0.1 0.1
+run_shift
+assert_eq "" "$(runs)" "grok + gh signed out: no pick"
+assert_contains "$LOG" "idle — gh not authenticated" "grok + gh signed out logged"
+DRY_RUN=true run_shift; DRY_RUN=false
+assert_eq "a.md" "$(runs)" "--dry-run skips the preflight"
+stub_bin gh 'exit 0'
 
 reset_tasks; add_task a.md; write_usage 0.1 0.1
 DETROIT_SHIFT_MAX_HOURS=0 run_shift

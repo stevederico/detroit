@@ -167,7 +167,7 @@ A shift reads Omarchy's usage record (`~/.local/state/omarchy/agents/usage/$DETR
 bash scheduling/install.sh    # systemd user timer: every night at 01:00
 ```
 
-The timer runs `DETROIT_AGENT=opencode ./factory.sh --shift`. With opencode the shift skips the usage record and keeps going until the queue is empty or `DETROIT_SHIFT_MAX_HOURS` (default `6`) have passed. Before each task it checks the model endpoint (`DETROIT_MODEL_ENDPOINT`, default `http://127.0.0.1:8090/v1`) and stops cleanly if the model is down. `DETROIT_MODEL` picks the opencode model as `provider/model` (default `studio/mlx-community/Qwen3-Coder-Next-4bit`). Output goes to `logs/nightly.log`. Details: [`docs/scheduling.md`](docs/scheduling.md).
+The timer runs `DETROIT_AGENT=opencode ./factory.sh --shift`. With opencode the shift skips the usage record and keeps going until the queue is empty or `DETROIT_SHIFT_MAX_HOURS` (default `6`) have passed. Before each task it checks that `gh` is signed in and that the model endpoint (`DETROIT_MODEL_ENDPOINT`, default `http://127.0.0.1:8090/v1`) answers and serves the model, and stops cleanly if not. The service pins opencode to the installed version so it can't upgrade mid-shift. `DETROIT_MODEL` picks the opencode model as `provider/model` (default `studio/mlx-community/Qwen3-Coder-Next-4bit`). Output goes to `logs/nightly.log`, which nothing rotates. Details: [`docs/scheduling.md`](docs/scheduling.md).
 
 **Nightly batch** — run 5 tasks in parallel at 2am:
 

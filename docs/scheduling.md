@@ -19,16 +19,23 @@ bash scheduling/install.sh --uninstall   # disable and remove them
 
 | File | What it does |
 |---|---|
-| `scheduling/detroit-nightly.timer` | `OnCalendar=*-*-* 01:00:00`, `Persistent=true` (a run missed while the machine was off starts at next boot) |
-| `scheduling/detroit-nightly.service` | `Type=oneshot`, sets `DETROIT_AGENT=opencode` and `PATH`, runs `factory.sh --shift`, appends output to `logs/nightly.log` |
-| `scheduling/install.sh` | Writes both units to `~/.config/systemd/user/` with this checkout's path, then `enable --now` on the timer |
+| `scheduling/detroit-nightly.timer` | `OnCalendar=*-*-* 01:00:00`. Not `Persistent`: a night missed while the machine was off is skipped, not run at the next boot |
+| `scheduling/detroit-nightly.service` | `Type=oneshot`, `Wants=`/`After=studio-mlx-tunnel.service`, sets `DETROIT_AGENT=opencode` and `PATH`, runs `factory.sh --shift`, appends output to `logs/nightly.log` |
+| `scheduling/install.sh` | Writes both units to `~/.config/systemd/user/` with this checkout's path and the pinned opencode directory, then `enable --now` on the timer |
+
+opencode is pinned. The service's `PATH` starts with the directory of the real opencode binary (`mise where opencode`, symlinks resolved, or `OPENCODE_DIR`). A `~/.local/bin/opencode` wrapper that runs `mise use -g opencode` on each call never runs, so opencode can't upgrade in the middle of a shift. Upgrade on purpose, then re-run `install.sh`.
 
 What a night looks like:
 
 1. The shift takes `.shift.lock`. A second shift exits at once.
-2. It checks the model endpoint (`curl $DETROIT_MODEL_ENDPOINT/models`, default `http://127.0.0.1:8090/v1`). Down: it logs `Model endpoint down` and exits 0.
-3. It runs the next task in `tasks/`, the same pipeline as a no-flag `factory.sh`.
-4. It repeats until the queue is empty, every task left has already run this shift, or `DETROIT_SHIFT_MAX_HOURS` (default 6) have passed. A task already started runs to its end. The service's `TimeoutStartSec=8h` is the hard stop.
+2. It peeks at `tasks/`. Empty: it logs `idle — no tasks` and exits 0.
+3. Preflight (`agent_preflight` in `lib/agent.sh`), each check cut off at 10s. A failure logs why and exits 0:
+   - `gh auth token` fails: `idle — gh not authenticated`
+   - `curl $DETROIT_MODEL_ENDPOINT/models` fails (default `http://127.0.0.1:8090/v1`): `idle — model endpoint down`
+   - The model id from `DETROIT_MODEL` is not in the response: `idle — model not served`
+4. It runs the task, the same pipeline as a no-flag `factory.sh`.
+5. It repeats until the queue is empty, every task left has already run this shift, or `DETROIT_SHIFT_MAX_HOURS` (default 6) have passed. A task already started runs to its end.
+6. The service's `TimeoutStartSec=8h` is the hard stop. systemd sends TERM to every process. `factory.sh` traps TERM like Ctrl+C: it removes the task lock, the worktree, and the shift lock. Every agent call and test run sits under `with_timeout`, which passes TERM on to its whole process tree (tool commands included), then KILL after 10s.
 
 Logs:
 
@@ -36,11 +43,13 @@ Logs:
 - `logs/<timestamp>-shift.log`: one shift
 - `logs/<timestamp>-w0.log`: one task
 
+Nothing rotates `logs/nightly.log`. systemd appends to it every night and it grows forever. Truncate it by hand (`: > logs/nightly.log`), or add a logrotate rule with `copytruncate` (systemd holds the file open for the run). The per-run logs are small and can be deleted by age (`find logs -name '2*.log' -mtime +30 -delete`).
+
 Useful commands:
 
 ```bash
 systemctl --user list-timers | grep detroit      # next and last run
-systemctl --user start detroit-nightly.service   # run a shift now
+systemctl --user start --no-block detroit-nightly.service   # run a shift now, in the background
 systemctl --user status detroit-nightly.service  # last result
 ```
 

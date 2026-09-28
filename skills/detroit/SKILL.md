@@ -20,7 +20,7 @@ bash factory.sh --dry-run        # resolve task/repo/branch, print prompt, run n
 bash factory.sh --parallel 3     # spawn 3 factory agents (worktree-isolated)
 bash factory.sh --shift          # run tasks one by one until the usage window hits DETROIT_BUDGET_STOP
 DETROIT_AGENT=opencode bash factory.sh --shift   # local model: until the queue is empty or DETROIT_SHIFT_MAX_HOURS
-bash scheduling/install.sh       # nightly systemd user timer (01:00) for the opencode shift
+bash scheduling/install.sh       # nightly systemd user timer (01:00): grok shift, then opencode
 bash factory.sh --repo NAME      # only run tasks whose frontmatter repo: matches NAME
 bash factory.sh --issues owner/repo       # pull open issues labeled detroit into tasks/
 bash factory.sh --verify owner/repo       # screenshot all open PRs
@@ -31,8 +31,10 @@ Flags combine (e.g. `--parallel 2 --dry-run`). `parallel` / `verify` / `issues`
 are mutually exclusive — last one wins (`lib/args.sh`). `--shift` combines only
 with `--dry-run` and `--repo`; pairing it with the others exits 2.
 
-Nightly timer: `detroit-nightly.timer` starts `DETROIT_AGENT=opencode
-factory.sh --shift` at 01:00 and appends to `logs/nightly.log`. Check it with
+Nightly timer: `detroit-nightly.timer` runs `scheduling/night-shift.sh` at
+01:00: one `factory.sh --shift` per agent in `DETROIT_NIGHT_AGENTS` (default
+`grok opencode`), subscription leftovers first, then the local model. It
+appends to `logs/nightly.log`. Check it with
 `systemctl --user list-timers | grep detroit`; run it now with
 `systemctl --user start --no-block detroit-nightly.service`
 (`docs/scheduling.md`). Before each task, `agent_preflight` stops the run
@@ -140,6 +142,7 @@ DETROIT_MODEL_ENDPOINT=http://127.0.0.1:8090/v1   # opencode preflight URL; "non
 DETROIT_PREFLIGHT_TIMEOUT=10       # seconds per preflight call (gh, endpoint)
 WITH_TIMEOUT_GRACE=10              # seconds between TERM and KILL when a timeout fires
 DETROIT_SHIFT_MAX_HOURS=6          # opencode --shift starts no task after this many hours
+DETROIT_NIGHT_AGENTS="grok opencode"   # nightly timer: shifts in this order
 DETROIT_CODE_TIMEOUT=3600          # CODE stage seconds
 DETROIT_TEST_CMD="npm test --silent"
 DETROIT_TEST_TIMEOUT=300

@@ -1,5 +1,11 @@
 # Changelog
 
+0.67.0
+
+  Add night shift
+  Run subscription first
+  Add scheduling tests
+
 0.66.0
 
   Kill process trees

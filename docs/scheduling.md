@@ -2,13 +2,20 @@
 
 Two parts: the nightly systemd timer that ships today, and the older research on scheduling through dotbot.
 
-## Nightly timer (systemd, opencode on a local model)
+## Nightly timer (systemd): the night shift
 
-`scheduling/` holds a systemd user service and timer. Every night at 01:00 local time the timer starts one shift on the local model:
+`scheduling/` holds a systemd user service and timer. Every night at 01:00 local time the timer runs `scheduling/night-shift.sh`, which works the queue in shifts, one agent after another:
 
 ```bash
-DETROIT_AGENT=opencode ./factory.sh --shift
+DETROIT_AGENT=grok ./factory.sh --shift       # 1. what the subscription window has left
+DETROIT_AGENT=opencode ./factory.sh --shift   # 2. the local model takes the rest
 ```
+
+- Subscription agents go first. Their window resets whether you use it or not, so what is left of it goes to the queue
+- A subscription shift stops when its session or weekly window reaches `DETROIT_BUDGET_STOP` (default `0.80`), so some budget stays for your day
+- The local model costs only power, so it takes whatever is still queued, up to `DETROIT_SHIFT_MAX_HOURS`
+- `DETROIT_NIGHT_AGENTS` sets the list and order (default `grok opencode`). For example `claude grok opencode` spends Claude's leftovers first
+- One failed shift never skips the next. An unknown name in the list stops the night before anything runs
 
 Install, from the detroit repo root:
 
@@ -20,22 +27,24 @@ bash scheduling/install.sh --uninstall   # disable and remove them
 | File | What it does |
 |---|---|
 | `scheduling/detroit-nightly.timer` | `OnCalendar=*-*-* 01:00:00`. Not `Persistent`: a night missed while the machine was off is skipped, not run at the next boot |
-| `scheduling/detroit-nightly.service` | `Type=oneshot`, `Wants=`/`After=studio-mlx-tunnel.service`, sets `DETROIT_AGENT=opencode` and `PATH`, runs `factory.sh --shift`, appends output to `logs/nightly.log` |
+| `scheduling/detroit-nightly.service` | `Type=oneshot`, `Wants=`/`After=studio-mlx-tunnel.service`, sets `DETROIT_NIGHT_AGENTS` and `PATH`, runs `night-shift.sh`, appends output to `logs/nightly.log` |
+| `scheduling/night-shift.sh` | Runs `factory.sh --shift` once per agent in `DETROIT_NIGHT_AGENTS`, in order. Exit code is the number of shifts that failed |
 | `scheduling/install.sh` | Writes both units to `~/.config/systemd/user/` with this checkout's path and the pinned opencode directory, then `enable --now` on the timer |
 
 opencode is pinned. The service's `PATH` starts with the directory of the real opencode binary (`mise where opencode`, symlinks resolved, or `OPENCODE_DIR`). A `~/.local/bin/opencode` wrapper that runs `mise use -g opencode` on each call never runs, so opencode can't upgrade in the middle of a shift. Upgrade on purpose, then re-run `install.sh`.
 
-What a night looks like:
+What each shift does:
 
-1. The shift takes `.shift.lock`. A second shift exits at once.
-2. It peeks at `tasks/`. Empty: it logs `idle — no tasks` and exits 0.
+1. The shift takes `.shift.lock`. A second shift exits at once. The night's shifts run one after another, so they never collide.
+2. Subscription agent only: it waits while your agent is working in a focused Herdr workspace, then reads Omarchy's usage record. Missing, stale, prepaid, or at `DETROIT_BUDGET_STOP`: it logs why and exits 0, and the next shift starts.
+3. It peeks at `tasks/`. Empty: it logs `idle — no tasks` and exits 0.
 3. Preflight (`agent_preflight` in `lib/agent.sh`), each check cut off at 10s. A failure logs why and exits 0:
    - `gh auth token` fails: `idle — gh not authenticated`
    - `curl $DETROIT_MODEL_ENDPOINT/models` fails (default `http://127.0.0.1:8090/v1`): `idle — model endpoint down`
-   - The model id from `DETROIT_MODEL` is not in the response: `idle — model not served`
-4. It runs the task, the same pipeline as a no-flag `factory.sh`.
-5. It repeats until the queue is empty, every task left has already run this shift, or `DETROIT_SHIFT_MAX_HOURS` (default 6) have passed. A task already started runs to its end.
-6. The service's `TimeoutStartSec=8h` is the hard stop. systemd sends TERM to every process. `factory.sh` traps TERM like Ctrl+C: it removes the task lock, the worktree, and the shift lock. Every agent call and test run sits under `with_timeout`, which passes TERM on to its whole process tree (tool commands included), then KILL after 10s.
+   - The model id from `DETROIT_MODEL` is not in the response: `idle — model not served` (opencode only, like the line above)
+5. It runs the task, the same pipeline as a no-flag `factory.sh`.
+6. It repeats until the queue is empty, every task left has already run this shift, the subscription window reaches `DETROIT_BUDGET_STOP`, or (local model) `DETROIT_SHIFT_MAX_HOURS` (default 6) have passed. A task already started runs to its end.
+7. The service's `TimeoutStartSec=8h` is the hard stop. systemd sends TERM to every process. `factory.sh` traps TERM like Ctrl+C: it removes the task lock, the worktree, and the shift lock. Every agent call and test run sits under `with_timeout`, which passes TERM on to its whole process tree (tool commands included), then KILL after 10s.
 
 Logs:
 
@@ -53,7 +62,7 @@ systemctl --user start --no-block detroit-nightly.service   # run a shift now, i
 systemctl --user status detroit-nightly.service  # last result
 ```
 
-To change the knobs, add `Environment=` lines with `systemctl --user edit detroit-nightly.service` (for example `DETROIT_SHIFT_MAX_HOURS=4` or `DETROIT_REPO=my-app`). The user manager only runs while you are logged in, unless lingering is on (`loginctl enable-linger`).
+To change the knobs, add `Environment=` lines with `systemctl --user edit detroit-nightly.service` (for example `Environment="DETROIT_NIGHT_AGENTS=claude opencode"` with the quotes, `DETROIT_BUDGET_STOP=0.9`, `DETROIT_SHIFT_MAX_HOURS=4` or `DETROIT_REPO=my-app`). The user manager only runs while you are logged in, unless lingering is on (`loginctl enable-linger`).
 
 # Scheduling via dotbot (research)
 

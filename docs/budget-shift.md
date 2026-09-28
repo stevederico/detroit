@@ -57,7 +57,7 @@ Every shift, any agent: after step 5 finds a task and before step 6 runs it, `ag
 - opencode only: `$DETROIT_MODEL_ENDPOINT/models` does not answer: `idle — model endpoint down`
 - opencode only: the model id from `DETROIT_MODEL` is not listed: `idle — model not served`
 
-The nightly timer in `scheduling/` runs this shift. See [scheduling.md](scheduling.md).
+The nightly timer in `scheduling/` runs a Grok budget shift first and this shift after it (`DETROIT_NIGHT_AGENTS`). See [scheduling.md](scheduling.md).
 
 ## Usage file
 

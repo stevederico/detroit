@@ -39,6 +39,24 @@ assert_not_contains "$OUT" "sonnet" "DETROIT_MODEL replaces the caller's alias"
 OUT=$(agent_out DETROIT_AGENT=grok DETROIT_MODEL=grok-4.7-build)
 assert_contains "$OUT" "--model grok-4.7-build" "DETROIT_MODEL applies to grok"
 
+# grok 1.0.40 stream: text in small chunks, tool_call events, usage/end noise
+stub_bin grok 'printf "%s\n" \
+  "{\"type\":\"available_commands\",\"tools\":[]}" \
+  "{\"type\":\"text\",\"data\":\"route:\"}" \
+  "{\"type\":\"text\",\"data\":\" plan\"}" \
+  "{\"type\":\"tool_call\",\"toolName\":\"read_file\",\"rawInput\":{\"target_file\":\"/repo/a.md\"}}" \
+  "{\"type\":\"tool_call\",\"toolName\":\"run_terminal_command\",\"rawInput\":{\"command\":\"npm test\"}}" \
+  "{\"type\":\"tool_call_update\",\"status\":\"completed\"}" \
+  "{\"type\":\"text\",\"data\":\"VERIFY_PASS\"}" \
+  "{\"type\":\"usage\",\"usage\":{}}" "{\"type\":\"end\"}"'
+OUT=$(agent_out -u DETROIT_MODEL DETROIT_AGENT=grok)
+assert_contains "$OUT" "route: plan" "grok 1.0.40 text chunks join into one line (TRIAGE reads it)"
+assert_contains "$OUT" "  Reading /repo/a.md" "grok read_file tool call shown"
+assert_contains "$OUT" "  Running: npm test" "grok run_terminal_command shown"
+assert_contains "$OUT" "VERIFY_PASS" "grok text after a tool call shown (VERIFY reads it)"
+assert_not_contains "$OUT" "available_commands" "grok noise events dropped"
+stub_bin grok 'printf "{\"params\":{\"update\":{\"sessionUpdate\":\"agent_message_chunk\",\"content\":{\"text\":\"grok %s\"}}}}\n" "$*"'
+
 OUT=$(agent_out -u DETROIT_MODEL DETROIT_AGENT=opencode)
 assert_contains "$OUT" "opencode run --auto --format json" "DETROIT_AGENT=opencode runs opencode headless"
 assert_contains "$OUT" "-m studio/mlx-community/Qwen3-Coder-Next-4bit" "opencode defaults to the local Studio model"

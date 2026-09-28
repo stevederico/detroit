@@ -1,5 +1,10 @@
 # Changelog
 
+0.68.0
+
+  Parse new grok stream
+  Pin grok version
+
 0.67.0
 
   Add night shift

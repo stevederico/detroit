@@ -47,7 +47,7 @@ SERVICE=$(cat "$DETROIT_ROOT/scheduling/detroit-nightly.service")
 TIMER=$(cat "$DETROIT_ROOT/scheduling/detroit-nightly.timer")
 assert_contains "$SERVICE" "scheduling/night-shift.sh" "service runs night-shift.sh"
 assert_contains "$SERVICE" "DETROIT_NIGHT_AGENTS=grok opencode" "service: subscription first, local last"
-assert_contains "$SERVICE" "PATH=@OPENCODE_DIR@:" "service: pinned opencode first in PATH"
+assert_contains "$SERVICE" "PATH=@OPENCODE_DIR@:@GROK_DIR@:" "service: pinned opencode and grok first in PATH"
 assert_contains "$TIMER" "OnCalendar=*-*-* 01:00:00" "timer: 01:00"
 assert_not_contains "$(grep -v '^#' "$DETROIT_ROOT/scheduling/detroit-nightly.timer")" "Persistent=" "timer: no catch-up run at boot"
 

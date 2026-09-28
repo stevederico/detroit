@@ -1,7 +1,7 @@
 # Nightly Detroit shifts: subscription agents first, then the local model
 # (scheduling/night-shift.sh). Install with
 # scheduling/install.sh, which points the paths below at this checkout and
-# @OPENCODE_DIR@ at the pinned opencode install.
+# @OPENCODE_DIR@ / @GROK_DIR@ at the pinned opencode and grok installs.
 [Unit]
 Description=Detroit nightly shifts (subscription leftovers, then local model)
 Documentation=https://github.com/stevederico/detroit/blob/master/docs/scheduling.md
@@ -16,9 +16,9 @@ WorkingDirectory=%h/Projects/detroit
 # then opencode on the local model takes the rest of the queue
 Environment="DETROIT_NIGHT_AGENTS=grok opencode"
 # The user manager's PATH depends on what the desktop session imported: say it here.
-# The pinned opencode dir comes first so ~/.local/bin/opencode (a wrapper that
-# runs `mise use -g opencode` on every call) can't upgrade opencode mid-run.
-Environment=PATH=@OPENCODE_DIR@:%h/.local/bin:%h/.local/share/mise/shims:/usr/local/bin:/usr/bin
+# The pinned opencode and grok dirs come first so the ~/.local/bin wrappers
+# (they run `mise use -g` on every call) can't upgrade either CLI mid-run.
+Environment=PATH=@OPENCODE_DIR@:@GROK_DIR@:%h/.local/bin:%h/.local/share/mise/shims:/usr/local/bin:/usr/bin
 ExecStart=/usr/bin/bash %h/Projects/detroit/scheduling/night-shift.sh
 # Appends forever; see docs/scheduling.md for rotation
 StandardOutput=append:%h/Projects/detroit/logs/nightly.log

@@ -17,8 +17,9 @@ Originally `factory.sh` called `claude -p "prompt" --dangerously-skip-permission
 | Codex CLI | `--approval-mode full-auto` | Yes (network-disabled sandbox) | Yes |
 | Gemini CLI | `echo "prompt" \| gemini` | Optional `-s` flag | Yes |
 | aider | `--message "prompt" --yes-always` | No | Yes (default) |
+| opencode | `run --auto \"prompt\"` headless | No | `--format json` |
 
-opencode and Cursor lack headless modes — not viable as CLIs.
+Cursor lacks a headless mode, so it is not viable as a CLI. opencode has one (`opencode run`) and is wired up as `DETROIT_AGENT=opencode`.
 
 Only Codex CLI is sandboxed by default. Grok, Claude, Gemini, and aider give unrestricted filesystem + shell access. If the runner is the sandbox (GitHub Actions, Modal), the CLI's own sandbox doesn't matter.
 

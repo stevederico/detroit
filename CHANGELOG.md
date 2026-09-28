@@ -1,5 +1,9 @@
 # Changelog
 
+0.65.0
+
+  Fix opencode headless doc
+
 0.64.0
 
   Add test script

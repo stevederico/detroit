@@ -26,6 +26,7 @@ Updated with insights from AIE-26 code factory discussions (Ramp Inspect, Stripe
 - [ ] Memory systems: load `lessons.md`, `DECISIONS.md`, `KNOWN_ISSUES.md` + semantic search over history into agent prompts
 - [ ] "The meta-game (personal agent OS that improves itself)" — track compounding rate as primary metric
 - [ ] Full-loop self-improvement: every stage (triage through operations) strengthens the others and the system compounds over cycles
+- [ ] Analytics feed (ALIVE loop): take an app's analytics as input (installs, usage, errors, drop-offs), find problems and opportunities, write them as tasks into `tasks/` so the nightly shift always has work, then measure the result on the next cycle
 - [ ] Outcome metrics focus: signal-to-production cycle time, autonomy ratio (work with no human touch), incident MTTR, code shelf life, cost per merged change
 
 ### Dark Factory & Verification

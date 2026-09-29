@@ -1,5 +1,9 @@
 # Changelog
 
+0.69.0
+
+  Add analytics feed idea
+
 0.68.0
 
   Parse new grok stream

@@ -52,6 +52,7 @@ count() { [ -f "$1" ] && wc -l < "$1" | tr -d ' ' || echo 0; }
 
 shift_run_task() {
   local t; t=$(pick_task --lock)
+  cat "$STATUS_DIR/agent-shift" >> "$TESTDIR/statuses" 2>/dev/null
   echo "$(basename "${t:-none}")" >> "$TESTDIR/runs"
   [ -n "$t" ] || return 0
   [ "${FAKE_CHILD:-leave}" = ship ] && mv "$t" "$TASK_DIR/done/"
@@ -203,6 +204,8 @@ assert_eq "a.md" "$(runs)" "--repo filter scopes the shift"
 reset_tasks; add_task "fix login bug.md"; add_task z.md
 FAKE_CHILD=ship run_shift
 assert_eq "fix login bug.md z.md" "$(runs)" "task names with spaces"
+assert_contains "$(cat "$TESTDIR/statuses")" "shift running task 2" "status while a task runs says shift running"
+assert_not_contains "$(cat "$TESTDIR/statuses" "$STATUS_DIR/agent-shift")" "fix login" "shift status never names the running task"
 
 echo "local agent (opencode):"
 reset_tasks; add_task a.md; add_task b.md; rm -f "$USAGE_DIR"/*.json
@@ -294,6 +297,10 @@ rm -f "$LOCK_DIR"/*; mkdir "$DETROIT/.shift.lock"
 run_shift
 assert_contains "$LOG" "another shift is running (pid starting)" "fresh lock without pid is respected"
 rm -rf "$DETROIT/.shift.lock"
+mkdir "$DETROIT/.shift.lock"; touch -t 202001010000 "$DETROIT/.shift.lock"
+run_shift
+assert_eq "a.md" "$(runs)" "lock without pid older than a minute is taken over"
+assert_eq "false" "$([ -d "$DETROIT/.shift.lock" ] && echo true || echo false)" "taken-over pidless lock released"
 
 echo "herdr session check:"
 HERDR_WS="$TESTDIR/herdr-ws.json"; HERDR_AGENTS="$TESTDIR/herdr-agents.json"

@@ -67,4 +67,23 @@ assert_eq "$TASK_DIR/0 fix login.md" "$(pick_task --lock)" "--lock returns the t
 assert_eq "true" "$([ -d "$LOCK_DIR/0 fix login.md.lock" ] && echo true)" "--lock takes the lock"
 assert_eq "$TASK_DIR/a.md" "$(pick_task --lock)" "next --lock moves on"
 
+echo "with_timeout:"
+assert_rc 0 "fast command passes through rc 0" with_timeout 5 true
+assert_rc 3 "command rc passes through" with_timeout 5 bash -c 'exit 3'
+assert_rc 124 "hung command returns 124" with_timeout 1 sleep 30
+assert_rc 127 "missing command returns 127" with_timeout 5 detroit-no-such-command 2>/dev/null
+only_a_function() { return 0; }
+assert_rc 127 "shell function is not an executable: 127" with_timeout 5 only_a_function 2>/dev/null
+SETSID_PY='import os, sys, time
+os.setsid()
+open(sys.argv[1], "w").write(str(os.getpid()))
+time.sleep(30)'
+T0=$SECONDS
+assert_rc 124 "tree with an own-session grandchild times out" with_timeout 1 bash -c 'python3 -c "$1" "$2" & wait' _ "$SETSID_PY" "$TESTDIR/grandchild.pid"
+GRANDCHILD=$(cat "$TESTDIR/grandchild.pid" 2>/dev/null)
+assert_eq "true" "$([ -n "$GRANDCHILD" ] && echo true)" "own-session grandchild started"
+assert_eq "gone" "$(kill -0 "$GRANDCHILD" 2>/dev/null && echo alive || echo gone)" "own-session grandchild killed on timeout"
+assert_eq "true" "$([ $((SECONDS - T0)) -lt 10 ] && echo true)" "timeout returns without waiting for the grandchild"
+[ -n "$GRANDCHILD" ] && kill "$GRANDCHILD" 2>/dev/null
+
 summarize

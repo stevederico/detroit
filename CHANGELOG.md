@@ -1,5 +1,17 @@
 # Changelog
 
+0.72.0
+
+  Test secret gates
+  Test gate globals
+  Test timeout kills
+  Test agent timeouts
+  Test preflight models
+  Test shift status
+  Test stale lock
+  Test install pinning
+  Test account knobs
+
 0.71.0
 
   Isolate test hooks

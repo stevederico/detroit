@@ -69,6 +69,25 @@ T0=$SECONDS
 OUT=$(env DETROIT_AGENT=opencode bash -c "AGENT_ID=0; LOGFILE='$LOGFILE'; . '$DETROIT_ROOT/lib/core.sh'; . '$DETROIT_ROOT/lib/agent.sh'; run_agent '$PROMPT' --timeout 1 --timeout-msg \"it's '''late''' now\"")
 assert_contains "$OUT" "it's '''late''' now" "opencode honors --timeout; quotes in the message reach the parser intact"
 assert_eq "true" "$([ $((SECONDS - T0)) -lt 10 ] && echo true)" "timed-out opencode call returns"
+stub_bin opencode "python3 -c 'import os, sys, time
+os.setsid()
+open(sys.argv[1], \"w\").write(str(os.getpid()))
+time.sleep(60)' '$TESTDIR/opencode-tool.pid' &
+exec sleep 30"
+T0=$SECONDS
+OUT=$(env DETROIT_AGENT=opencode bash -c "AGENT_ID=0; LOGFILE='$LOGFILE'; . '$DETROIT_ROOT/lib/core.sh'; . '$DETROIT_ROOT/lib/agent.sh'; run_agent '$PROMPT' --timeout 1 --timeout-msg late")
+TOOL_PID=$(cat "$TESTDIR/opencode-tool.pid" 2>/dev/null)
+assert_eq "true" "$([ $((SECONDS - T0)) -lt 10 ] && echo true)" "opencode with a tool in its own session returns on timeout"
+assert_eq "true" "$([ -n "$TOOL_PID" ] && echo true)" "opencode tool process started"
+assert_eq "gone" "$(kill -0 "$TOOL_PID" 2>/dev/null && echo alive || echo gone)" "opencode tool in its own session killed after the parser timeout"
+[ -n "$TOOL_PID" ] && kill "$TOOL_PID" 2>/dev/null
+for cli in grok claude; do
+  stub_bin "$cli" 'exec sleep 2'
+  OUT=$(env DETROIT_AGENT="$cli" bash -c "AGENT_ID=0; LOGFILE='$LOGFILE'; . '$DETROIT_ROOT/lib/core.sh'; . '$DETROIT_ROOT/lib/agent.sh'; run_agent '$PROMPT' --timeout 1 --timeout-msg \"it's '''late''' now\"")
+  assert_contains "$OUT" "it's '''late''' now" "$cli: quotes in the timeout message reach the parser intact"
+done
+stub_bin claude 'printf "{\"type\":\"result\",\"result\":\"claude %s\"}\n" "$*"'
+stub_bin grok 'printf "{\"params\":{\"update\":{\"sessionUpdate\":\"agent_message_chunk\",\"content\":{\"text\":\"grok %s\"}}}}\n" "$*"'
 OUT=$(env DETROIT_AGENT=grok bash -c "AGENT_ID=0; LOGFILE='$LOGFILE'; . '$DETROIT_ROOT/lib/core.sh'; . '$DETROIT_ROOT/lib/agent.sh'; run_agent '$PROMPT' --timeout 5s")
 assert_contains "$OUT" "--timeout '5s' is not whole seconds" "non-numeric --timeout is logged"
 assert_contains "$OUT" "grok " "non-numeric --timeout still runs the agent"
@@ -104,6 +123,8 @@ assert_rc 0 "provider/ prefix stripped before matching" preflight DETROIT_AGENT=
 OUT=$(preflight DETROIT_AGENT=opencode DETROIT_MODEL=studio/mlx-community/Qwen3.8-27B-4bit); RC=$?
 assert_eq 1 "$RC" "model not in /models: fails"
 assert_contains "$OUT" "Model not served: mlx-community/Qwen3.8-27B-4bit" "model not served is logged"
+assert_eq "" "$(grep -v '/models$' "$TESTDIR/curls")" "preflight only ever requests /models"
+assert_not_contains "$(cat "$TESTDIR/curls")" "Qwen3.8" "preflight never sends the unserved model to the server"
 stub_bin curl 'echo "<html>proxy error</html>"'
 assert_rc 1 "HTTP 200 that is not a model list: fails" preflight DETROIT_AGENT=opencode
 

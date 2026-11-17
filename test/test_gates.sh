@@ -103,6 +103,15 @@ fresh_repo sc7
 add_commit "$REPO_DIR" "config.envelope.js" "export const x = 1"
 assert_rc 0 "config.envelope.js not flagged by .env filename check" check_gate "No secrets in committed files"
 
+echo "secret gates shadowed by the *credential*/*token* arm still scan content:"
+fresh_repo sh1
+add_commit "$REPO_DIR" "config.js" "const key = '$AWS_FAKE'"
+assert_rc 1 "hardcoded credentials gate scans diff content" check_gate "No hardcoded credentials"
+assert_rc 1 "access token gate scans diff content" check_gate "No access tokens in code"
+fresh_repo sh2
+add_commit "$REPO_DIR" "config.js" "export const x = 1"
+assert_rc 0 "hardcoded credentials gate passes a clean diff" check_gate "No hardcoded credentials"
+
 echo "500-line gate:"
 fresh_repo big1
 python3 -c "print('x\n' * 501, end='')" > big.js
@@ -178,5 +187,12 @@ EOF
 run_all_gates "$TESTDIR/staged.md"
 assert_eq "" "$GATE_FAILURES" "strict changelog rule passes via stage grouping"
 assert_contains "$GATE_CUSTOM" "Custom quality rule" "plain custom rule forwarded"
+
+echo "run_all_gates (unstaged factory.md):"
+fresh_repo ra2
+printf '%s\n' "## quality" "- ! Single responsibility per function" "- Custom flat rule" > "$TESTDIR/flat.md"
+run_all_gates "$TESTDIR/flat.md"
+assert_contains "$GATE_FAILURES" "Single responsibility" "unstaged strict failure survives into the caller"
+assert_contains "$GATE_CUSTOM" "Custom flat rule" "unstaged custom rule survives into the caller"
 
 summarize

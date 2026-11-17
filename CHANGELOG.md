@@ -1,5 +1,10 @@
 # Changelog
 
+0.71.0
+
+  Isolate test hooks
+  Fix fixture commits
+
 0.70.0
 
   Remove code comments

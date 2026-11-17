@@ -10,10 +10,11 @@ FAIL_COUNT=0
 
 make_repo() {
   local dir="$1"
-  mkdir -p "$dir"
+  mkdir -p "$dir" "$TESTDIR/no-hooks"
   git -C "$dir" init -q
   git -C "$dir" config user.email test@detroit.dev
   git -C "$dir" config user.name detroit-test
+  git -C "$dir" config core.hooksPath "$TESTDIR/no-hooks"
   git -C "$dir" checkout -q -b main
   echo "# fixture" > "$dir/README.md"
   git -C "$dir" add -A

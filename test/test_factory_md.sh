@@ -1,5 +1,4 @@
 #!/bin/bash
-# Tests for lib/factory-md.sh parsing.
 . "$(dirname "$0")/helpers.sh"
 . "$DETROIT_ROOT/lib/factory-md.sh"
 
@@ -68,7 +67,7 @@ assert_eq "qa@example.com hunter2secret" "$(read_env_bullet "test account" "$FIX
 assert_eq "" "$(read_env_bullet "missing knob" "$FIXTURE")" "absent key is empty"
 
 echo "resolve_knob:"
-DETROIT="$TESTDIR"  # point resolve_knob at the fixture
+DETROIT="$TESTDIR"
 cp "$FIXTURE" "$TESTDIR/factory.md"
 # shellcheck disable=SC2034  # read indirectly via ${!1} in resolve_knob
 KNOB_TEST_VAR="from-env"

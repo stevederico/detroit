@@ -1,13 +1,6 @@
 # shellcheck shell=bash
-# lib/code-stage.sh — TRIAGE → PLAN → APPROVE → CODE agent session.
-# Reads/writes pipeline globals: TASK_*, REPO_*, BRANCH, PLAN_DOC, etc.
 
-# run_code_stage — pre-code prompt stages + main CODE agent. Sets PLAN_DOC.
 run_code_stage() {
-  # ── TRIAGE + PLAN (factory.md v2 pre-code prompt stages) ──
-  # Run only when the factory declares them as `prompt` stages and provides a
-  # `## triage` / `## plan` body. Unattended by default; DETROIT_APPROVE_PLAN=1
-  # adds an interactive plan-approval gate. Threads the resulting plan into CODE.
   local TASK_ROUTE="build" PLAN_BODY TRIAGE_BODY FACTORY_STAGES
   local TRIAGE_PROMPT_FILE TRIAGE_OUT PLAN_PROMPT_FILE PROMPT_FILE
   local CODE_START CODE_END CODE_ELAPSED LESSONS_SNIP req ans waited _approve

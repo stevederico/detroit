@@ -1,15 +1,4 @@
 #!/bin/bash
-# scheduling/install.sh — install the nightly shift as a systemd user timer.
-# Copies detroit-nightly.service and .timer into ~/.config/systemd/user with
-# the paths pointed at this checkout, then enables the timer. Safe to re-run.
-# Usage: bash scheduling/install.sh [--uninstall]
-#
-# opencode and grok are pinned: the service's PATH starts with the
-# directories of their real binaries, so a `mise use -g` wrapper never runs
-# (or upgrades them) during a shift. A grok upgrade changed its stream format
-# once already. OPENCODE_DIR / GROK_DIR override; otherwise `mise where`.
-# Grok is optional: without it the grok shift uses whatever grok is on PATH.
-# Re-run after upgrading either on purpose.
 set -u -o pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -30,7 +19,6 @@ case "$ROOT" in
 esac
 
 OPENCODE_DIR="${OPENCODE_DIR:-$(mise where opencode 2>/dev/null)}"
-# Resolve symlinks (mise's latest -> 1.18.32) so an upgrade can't move the pin
 OPENCODE_DIR=$(cd "$OPENCODE_DIR" 2>/dev/null && pwd -P)
 if [ -z "$OPENCODE_DIR" ] || [ ! -x "$OPENCODE_DIR/opencode" ]; then
   echo "error: no opencode binary at '${OPENCODE_DIR}/opencode'; set OPENCODE_DIR to its directory" >&2
@@ -50,7 +38,7 @@ if [ -n "$GROK_DIR" ] && [ -x "$GROK_DIR/grok" ]; then
   echo "grok pinned: $GROK_DIR"
 else
   echo "warning: no grok install found to pin; the grok shift uses grok from PATH" >&2
-  GROK_DIR="$ROOT/scheduling"   # harmless PATH entry (no grok binary there)
+  GROK_DIR="$ROOT/scheduling"
 fi
 
 mkdir -p "$UNIT_DIR" "$ROOT/logs" || exit 1

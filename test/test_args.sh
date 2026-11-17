@@ -1,5 +1,4 @@
 #!/bin/bash
-# Tests for lib/args.sh and the factory.sh CLI surface.
 . "$(dirname "$0")/helpers.sh"
 . "$DETROIT_ROOT/lib/args.sh"
 
@@ -73,7 +72,6 @@ assert_eq "hi" "$(with_timeout 5 echo hi)" "captured output"
 assert_eq "true" "$([ $((SECONDS - T0)) -lt 3 ] && echo true)" "capture returns without waiting on the watchdog"
 assert_rc 127 "missing command → 127" with_timeout 5 detroit-no-such-command
 
-# gone <pid> — true once pid has exited (polls 3s: an orphan waits for its reaper)
 gone() {
   local i=0
   while kill -0 "$1" 2>/dev/null; do

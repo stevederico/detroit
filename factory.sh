@@ -1,24 +1,6 @@
 #!/bin/bash
-# factory.sh — detroit code factory
-# Reads next task file from tasks/, ships them as PRs.
-# Usage: bash factory.sh [--dry-run] [--repo NAME] [--issues owner/repo] [--parallel N] [--shift] [--verify owner/repo [pr]]
-#
-# Entry point only — the pipeline lives in lib/:
-#   core.sh       logging, status, resolve_gh_repo, lessons, cleanup
-#   args.sh       CLI flag parsing
-#   factory-md.sh factory.md section/stage/rule parsing
-#   gates.sh      deterministic rule gates
-#   agent.sh      agent CLI invocation (claude, dotbot, grok, opencode) + preflight
-#   devserver.sh  dev server + test-account helpers
-#   modes.sh      --parallel and --issues modes
-#   verify-prs.sh --verify mode
-#   shift.sh      --shift mode (run tasks while the usage window has room)
-#   shipped.sh    verify_shipped (PR/remote facts)
-#   code-stage.sh TRIAGE → PLAN → CODE
-#   pipeline.sh   PICK → ROUTE → PREPARE → SCAFFOLD → CODE → GATES → FIX → SHIP
-#   postship.sh   CI → VERIFY → UPDATE → DONE
 
-set -u -o pipefail  # no -e: pipeline control flow inspects failures explicitly
+set -u -o pipefail
 
 DETROIT="${DETROIT_DIR:-$(cd "$(dirname "$0")" && pwd)}"
 TASK_DIR="$DETROIT/tasks"
@@ -39,10 +21,8 @@ TASK_FILE=""
 QUALITY_OK=true
 HAS_SHIPPED=false
 FACTORY_OK=false
-# Force headless browser for all agent-browser calls
 export AGENT_BROWSER_HEADED=""
 
-# Shared function libraries (definitions only — no side effects on source)
 . "$DETROIT/lib/core.sh"
 . "$DETROIT/lib/args.sh"
 . "$DETROIT/lib/factory-md.sh"
@@ -59,7 +39,6 @@ export AGENT_BROWSER_HEADED=""
 
 parse_args "$@" || exit 2
 
-# Ctrl+C and TERM (systemd stop, TimeoutStartSec) cleanup, defined in lib/core.sh
 trap cleanup INT TERM
 
 case "$MODE" in
@@ -69,13 +48,11 @@ case "$MODE" in
   issues)   mode_issues ;;
   shift)    mode_shift ;;
   run)
-    # gh signed out or a local model not answering would fail the task:
-    # stop before PICK. An empty queue skips the check (PICK logs it).
     if [ "$DRY_RUN" != true ] && [ -n "$(pick_task)" ] && ! agent_preflight; then
       update_status "idle — $PREFLIGHT_REASON"
       exit 0
     fi
     run_pipeline
-    run_postship  # its final check is the factory run's exit code
+    run_postship
     ;;
 esac

@@ -1,7 +1,4 @@
 # shellcheck shell=bash
-# lib/core.sh — logging, status, and cleanup helpers.
-# Function definitions only; factory.sh sets the globals (AGENT_ID, LOGFILE,
-# STATUS_DIR, LOCK_DIR, TASK_FILE, WORKTREE_DIR, DETROIT) and installs the trap.
 
 if [ "$AGENT_ID" = "0" ]; then
   log() { echo "[$(date +"%H:%M:%S")] $1" >> "$LOGFILE"; echo "$1"; }
@@ -12,20 +9,8 @@ else
 fi
 stage() { echo "" >> "$LOGFILE"; echo ""; log "━━━ $1 ━━━"; }
 update_status() { echo "$1" > "$STATUS_DIR/agent-$AGENT_ID"; }
-# Prefixed tee: writes raw to log, prefixed to terminal
 ptee() { while IFS= read -r line; do echo "$line" >> "$LOGFILE"; echo "${PREFIX}${line}"; done; }
 
-# with_timeout <secs> <cmd...> — portable timeout (macOS has no timeout(1)).
-# A python3 supervisor starts cmd in a new session (setsid; macOS has no
-# setsid(1)) and waits for it. On timeout, or when the supervisor itself gets
-# INT, TERM or HUP (Ctrl+C, systemd stop), it sends TERM to cmd's process
-# group and to the group of every descendant (opencode starts each tool
-# command in its own session), waits up to WITH_TIMEOUT_GRACE seconds (10)
-# for them to exit, then sends KILL. So npm test, dev servers and tool
-# commands go with cmd. Returns 124 on timeout or any signal death, 127 when
-# cmd is not found, else cmd's rc. cmd must be an executable, not a shell
-# function. The supervisor exits with cmd, so $(with_timeout ...) returns as
-# soon as cmd does.
 WITH_TIMEOUT_PY='
 import os, signal, subprocess, sys, time
 
@@ -36,7 +21,6 @@ def on_signal(signum, _frame):
     raise Stop(signum)
 
 def tree_groups(root):
-    # Process groups of root and every descendant, never our own
     try:
         out = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,pgid="],
                              capture_output=True, text=True).stdout
@@ -73,7 +57,7 @@ def stop(child, grace):
     groups = signal_groups(tree_groups(child.pid), signal.SIGTERM)
     deadline = time.monotonic() + grace
     while groups and time.monotonic() < deadline:
-        child.poll()  # reap the leader so its group can empty
+        child.poll()
         time.sleep(0.2)
         groups = signal_groups(groups, 0)
     signal_groups(groups, signal.SIGKILL)
@@ -107,8 +91,6 @@ with_timeout() {
   return "$rc"
 }
 
-# resolve_gh_repo [dir] — print owner/name for the git repo at dir (default: REPO_DIR).
-# Order: gh repo view → origin remote parse → gh user + basename.
 resolve_gh_repo() {
   local dir="${1:-${REPO_DIR:-.}}" slug url owner name
   slug=$(cd "$dir" 2>/dev/null && gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null) || true
@@ -118,7 +100,6 @@ resolve_gh_repo() {
   fi
   url=$(git -C "$dir" remote get-url origin 2>/dev/null) || true
   if [ -n "$url" ]; then
-    # git@github.com:owner/name.git | https://github.com/owner/name(.git)
     slug=$(printf '%s' "$url" | sed -E \
       -e 's#^git@github\.com:##' \
       -e 's#^https?://github\.com/##' \
@@ -137,8 +118,6 @@ resolve_gh_repo() {
   return 1
 }
 
-# task_in_repo_filter <task-file> — true when REPO_FILTER is unset or matches
-# the task's frontmatter repo: (so a run targets one project).
 task_in_repo_filter() {
   [ -n "${REPO_FILTER:-}" ] || return 0
   local repo
@@ -146,11 +125,6 @@ task_in_repo_filter() {
   [ "$repo" = "$REPO_FILTER" ]
 }
 
-# pick_task [--lock] — print the first task PICK takes: *.md directly in
-# TASK_DIR (never done/ or failed/), filename order, matching REPO_FILTER, not
-# named in DETROIT_SHIFT_SKIP (newline list), not locked. Locks older than 30
-# min are cleared first. --lock takes the lock (atomic mkdir) before printing;
-# without it this is a peek. Prints nothing when no task is free.
 pick_task() {
   local take=false candidate name nl='
 '
@@ -172,7 +146,6 @@ pick_task() {
   return 0
 }
 
-# append_lesson <one-line> — durable failure memory in $DETROIT/lessons.md (max 50 bullets).
 append_lesson() {
   local line="$1" file="${DETROIT}/lessons.md" date_s tmp count
   [ -n "$line" ] || return 0
@@ -185,15 +158,12 @@ append_lesson() {
   count=$(grep -c '^- ' "$file" 2>/dev/null || echo 0)
   if [ "${count:-0}" -gt 50 ]; then
     tmp=$(mktemp)
-    # Keep header lines (non-bullets) + last 50 bullets
     grep -v '^- ' "$file" > "$tmp" 2>/dev/null || true
     grep '^- ' "$file" | tail -50 >> "$tmp"
     mv "$tmp" "$file"
   fi
 }
 
-# quality_fail <stage> <reason> — mark run quality failed and record a lesson.
-# QUALITY_OK is a pipeline global consumed by postship.sh (SC2034 is a false positive).
 quality_fail() {
   # shellcheck disable=SC2034
   QUALITY_OK=false
@@ -201,17 +171,13 @@ quality_fail() {
   log "QUALITY_OK=false — $1: $2"
 }
 
-# Ctrl+C / TERM cleanup (trap installed by factory.sh)
 cleanup() {
   echo "" | ptee
   log "━━━ CANCELLED ━━━"
-  # Release a --shift lock (lib/shift.sh)
   [ -n "${SHIFT_LOCK_HELD:-}" ] && rm -rf "$SHIFT_LOCK_HELD"
-  # Remove task lock
   if [ -n "$TASK_FILE" ]; then
     rm -rf "$LOCK_DIR/$(basename "$TASK_FILE").lock" 2>/dev/null
   fi
-  # Clean up worktree
   if [ -n "$WORKTREE_DIR" ] && [ -d "$WORKTREE_DIR" ]; then
     cd "$DETROIT" || true
     if [ -n "${MAIN_REPO_DIR:-}" ]; then

@@ -1,5 +1,4 @@
 #!/bin/bash
-# Tests for verify_shipped (lib/pipeline.sh) — stubbed gh, local bare origin.
 . "$(dirname "$0")/helpers.sh"
 
 AGENT_ID=0
@@ -8,7 +7,7 @@ LOGFILE="$TESTDIR/test.log"; : > "$LOGFILE"
 TASK_FILE=""; WORKTREE_DIR=""; LOCK_DIR="$TESTDIR/.locks"; DETROIT="$DETROIT_ROOT"
 . "$DETROIT_ROOT/lib/core.sh"
 . "$DETROIT_ROOT/lib/shipped.sh"
-log() { echo "$1" >> "$LOGFILE"; }  # quiet log for tests
+log() { echo "$1" >> "$LOGFILE"; }
 
 make_repo "$TESTDIR/repo"
 git init -q --bare "$TESTDIR/origin.git"

@@ -1,6 +1,4 @@
 #!/bin/bash
-# Tests for lib/shift.sh (--shift mode). Fixture usage JSON, fake pipeline,
-# stubbed herdr and omarchy-agent-usage-update. No live Claude call.
 . "$(dirname "$0")/helpers.sh"
 
 AGENT_ID=0
@@ -25,7 +23,6 @@ unset DETROIT_AGENT DETROIT_MODEL DETROIT_BUDGET_STOP DETROIT_USAGE_MAX_AGE DETR
 unset DETROIT_SHIFT_MAX_HOURS DETROIT_MODEL_ENDPOINT
 export DETROIT_SHIFT_PAUSE=0
 
-# Never reach the real Herdr, the real Omarchy collectors, or a real model endpoint
 stub_bin herdr 'exit 1'
 stub_bin gh 'exit 0'
 MODELS='{"data":[{"id":"mlx-community/Qwen3-Coder-Next-4bit"}]}'
@@ -35,8 +32,6 @@ stub_bin omarchy-agent-usage-update "echo called >> '$TESTDIR/refreshes'"
 now_iso() { python3 -c 'import datetime as d; print(d.datetime.now(d.timezone.utc).isoformat())'; }
 OLD_ISO="2020-01-01T00:00:00+00:00"
 
-# write_usage <session|-> <weekly|-> [updatedAt] [extra-limit-json] — fixture
-# for the current agent (grok by default)
 write_usage() {
   local s="$1" w="$2" at="${3:-$(now_iso)}" extra="${4:-}" limits=""
   [ "$s" = "-" ] || limits="{\"label\":\"Session (5-hour)\",\"percent\":$s,\"resetsAt\":\"2099-01-01T00:00:00+00:00\"}"
@@ -55,10 +50,6 @@ USAGE_FILE="$USAGE_DIR/grok.json"
 add_task() { printf '%s\n' "${2:-do the thing}" > "$TASK_DIR/$1"; }
 count() { [ -f "$1" ] && wc -l < "$1" | tr -d ' ' || echo 0; }
 
-# Fake child factory.sh: PICK exactly like the real one (pick_task --lock
-# under the exported skip list), then per FAKE_CHILD: ship → tasks/done/,
-# anything else → left in tasks/ (dry run, or stopped before SHIP). The lock is
-# released either way, as postship.sh and the dry-run summary do.
 shift_run_task() {
   local t; t=$(pick_task --lock)
   echo "$(basename "${t:-none}")" >> "$TESTDIR/runs"
@@ -69,7 +60,6 @@ shift_run_task() {
 }
 shift_sleep() { echo slept >> "$TESTDIR/sleeps"; }
 
-# run_shift — fresh counters and log, then one mode_shift; sets RC and LOG
 run_shift() {
   rm -f "$TESTDIR/runs" "$TESTDIR/sleeps" "$TESTDIR/refreshes" "$LOGDIR"/*
   RC=0
@@ -215,7 +205,6 @@ FAKE_CHILD=ship run_shift
 assert_eq "fix login bug.md z.md" "$(runs)" "task names with spaces"
 
 echo "local agent (opencode):"
-# No usage record exists for a local model: the shift must not look for one
 reset_tasks; add_task a.md; add_task b.md; rm -f "$USAGE_DIR"/*.json
 DETROIT_AGENT=opencode FAKE_CHILD=ship run_shift
 assert_eq 0 "$RC" "opencode, no usage record: exit 0"
@@ -234,7 +223,6 @@ DETROIT_AGENT=opencode DETROIT_SHIFT_MAX_HOURS=0 run_shift
 assert_eq "" "$(runs)" "cap already reached: no pick"
 assert_contains "$LOG" "idle — shift cap reached (0h)" "cap logged"
 
-# The clock jumps 2h per task: a 3h cap lets two tasks start, not the third
 reset_tasks; add_task a.md; add_task b.md; add_task c.md
 echo 1000000 > "$TESTDIR/clock"
 shift_now() { cat "$TESTDIR/clock"; }
@@ -308,14 +296,13 @@ assert_contains "$LOG" "another shift is running (pid starting)" "fresh lock wit
 rm -rf "$DETROIT/.shift.lock"
 
 echo "herdr session check:"
-# herdr stub reads its answers from files so a test can flip them mid-loop
 HERDR_WS="$TESTDIR/herdr-ws.json"; HERDR_AGENTS="$TESTDIR/herdr-agents.json"
 stub_bin herdr "case \"\$1 \$2\" in
   'workspace list') cat '$HERDR_WS' ;;
   'agent list') cat '$HERDR_AGENTS' ;;
   *) exit 1 ;;
 esac"
-herdr_state() {  # herdr_state <focused-ws-id> <agent-kind> <agent-ws-id> <status>
+herdr_state() {
   printf '{"result":{"workspaces":[{"workspace_id":"w1","focused":%s},{"workspace_id":"w2","focused":%s}]}}\n' \
     "$([ "$1" = w1 ] && echo true || echo false)" "$([ "$1" = w2 ] && echo true || echo false)" > "$HERDR_WS"
   printf '{"result":{"agents":[{"agent":"%s","workspace_id":"%s","agent_status":"%s"}]}}\n' "$2" "$3" "$4" > "$HERDR_AGENTS"
@@ -332,7 +319,6 @@ assert_rc 1 "idle agent → free" shift_session_busy
 
 reset_tasks; add_task a.md; write_usage 0.1 0.1
 herdr_state w1 grok w1 working
-# First sleep: session ends and the window fills, so the loop exits on re-check
 shift_sleep() {
   echo slept >> "$TESTDIR/sleeps"
   herdr_state w1 grok w1 idle
@@ -351,7 +337,6 @@ stub_bin herdr 'exit 1'
 assert_rc 1 "herdr unavailable → free" shift_session_busy
 
 echo "factory.sh --shift:"
-# Real entry point against a copied tree: fixture usage, stubbed herdr, empty queue
 mkdir -p "$TESTDIR/tree"
 cp -R "$DETROIT_ROOT/factory.sh" "$DETROIT_ROOT/lib" "$TESTDIR/tree/"
 write_usage 0.1 0.1

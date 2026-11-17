@@ -1,5 +1,9 @@
 # Changelog
 
+0.70.0
+
+  Remove code comments
+
 0.69.0
 
   Add analytics feed idea

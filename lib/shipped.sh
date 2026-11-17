@@ -1,11 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034  # HAS_SHIPPED/PR_* are pipeline globals consumed by postship.sh
-# lib/shipped.sh — decide whether a factory run actually shipped.
-# Sets HAS_SHIPPED, PR_NUM, PR_URL from verified facts (git + gh), not agent prints.
 
-# verify_shipped — Existing repo: commits on the branch AND an open PR for it
-# (gh outage falls back to remote-branch existence with a WARN).
-# New repo: local commits AND a reachable origin remote.
 verify_shipped() {
   HAS_SHIPPED=false
   PR_NUM=""
@@ -31,7 +26,6 @@ verify_shipped() {
 
   pr_json=$(cd "$REPO_DIR" && gh pr list --head "$BRANCH" --state open --json number,url 2>/dev/null) || gh_rc=$?
   if [ "$gh_rc" -ne 0 ]; then
-    # gh unavailable — fall back to remote-branch existence
     if [ -n "$(git -C "$REPO_DIR" ls-remote --heads origin "$BRANCH" 2>/dev/null)" ]; then
       log "WARN: gh unavailable — branch is on origin, treating as shipped (no PR metadata)"
       HAS_SHIPPED=true

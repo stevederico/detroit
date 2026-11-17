@@ -1,15 +1,10 @@
 # shellcheck shell=bash
-# lib/postship.sh — post-ship stages: CI → VERIFY → UPDATE → DONE.
-# Reads pipeline globals set by lib/pipeline.sh; its final command's exit code
-# is the factory run's exit code. VERIFY uses lib/devserver.sh helpers.
-# Success requires HAS_SHIPPED and QUALITY_OK (fail closed on gate/CI/verify fail).
 
 run_postship() {
-# ── CI GATE (watch GitHub Actions, fix failures) ─────────
 if [ "$HAS_SHIPPED" = true ]; then
   stage "CI"
   update_status "$TASK_NAME — watching CI"
-  PR_NUM_CI="$PR_NUM"  # set by verify_shipped (gh pr list, not log scraping)
+  PR_NUM_CI="$PR_NUM"
   GH_REPO_SLUG=$(resolve_gh_repo "$REPO_DIR" 2>/dev/null || true)
   if [ -z "$GH_REPO_SLUG" ]; then
     GH_REPO_SLUG="$REPO_NAME"
@@ -17,7 +12,6 @@ if [ "$HAS_SHIPPED" = true ]; then
   fi
 
   if [ -n "$PR_NUM_CI" ]; then
-    # Wait for CI run to appear (max 30s)
     CI_RUN_ID=""
     for _ in $(seq 1 15); do
       CI_RUN_ID=$(gh run list --repo "$GH_REPO_SLUG" --branch "$BRANCH" \
@@ -34,7 +28,6 @@ if [ "$HAS_SHIPPED" = true ]; then
       CI_CONCLUSION=$(gh run view "$CI_RUN_ID" --repo "$GH_REPO_SLUG" --json conclusion --jq '.conclusion' 2>/dev/null)
       log "CI result: $CI_CONCLUSION"
 
-      # If CI failed, try to fix (max 2 attempts)
       CI_FIX_ATTEMPT=0
       CI_MAX_ATTEMPTS=2
       while [ "$CI_CONCLUSION" = "failure" ] && [ "$CI_FIX_ATTEMPT" -lt "$CI_MAX_ATTEMPTS" ]; do
@@ -65,7 +58,6 @@ CI_FIX_EOF
         run_agent "$CI_FIX_PROMPT_FILE" --model sonnet --timeout 120 | ptee
         rm -f "$CI_FIX_PROMPT_FILE"
 
-        # Wait for new CI run
         sleep 5
         CI_RUN_ID=$(gh run list --repo "$GH_REPO_SLUG" --branch "$BRANCH" \
           --json databaseId --limit 1 --jq '.[0].databaseId' 2>/dev/null)
@@ -92,16 +84,13 @@ CI_FIX_EOF
   fi
 fi
 
-# ── VERIFY (self-verification loop) ───────────────────────
 if [ "$HAS_SHIPPED" = true ] && command -v agent-browser &>/dev/null; then
   stage "VERIFY"
   update_status "$TASK_NAME — verifying"
-  # PR_NUM already set by verify_shipped
   SCREENSHOT_DIR="$LOGDIR/screenshots/$TASK_NAME"
   mkdir -p "$SCREENSHOT_DIR"
   [ -n "${GH_REPO_SLUG:-}" ] || GH_REPO_SLUG=$(resolve_gh_repo "$REPO_DIR" 2>/dev/null || echo "$REPO_NAME")
 
-  # Detect dev server command from package.json
   DEV_URL=""
   cd "$REPO_DIR" || exit 1
   detect_dev_cmd
@@ -113,17 +102,14 @@ if [ "$HAS_SHIPPED" = true ] && command -v agent-browser &>/dev/null; then
       clear_dev_ports
     fi
 
-    # Install deps (worktree symlinks may be broken); surface failures in the log
     if [ -n "$WORKTREE_DIR" ] && [ -f "package.json" ]; then
       log "Installing dependencies..."
       npm install --silent 2>&1 | tail -5 | ptee
-      # Install workspace deps (e.g. backend/)
       if grep -q '"workspaces"' package.json 2>/dev/null; then
         npm install --workspaces --silent 2>&1 | tail -5 | ptee
       fi
     fi
 
-    # Start backend if it exists (e.g. Skateboard apps with backend/)
     start_backend
 
     log "Starting: npm run $DEV_CMD"
@@ -133,7 +119,6 @@ if [ "$HAS_SHIPPED" = true ] && command -v agent-browser &>/dev/null; then
       log "Dev server ready at $DEV_URL — verifying changes"
       DIFF=$(git diff "$BASE_BRANCH...$BRANCH" 2>/dev/null)
 
-      # Pre-extract target route from diff (deterministic, no agent needed)
       extract_target_route "$DIFF"
       if [ -n "$TARGET_ROUTE" ]; then
         TARGET_URL="$DEV_URL/$TARGET_ROUTE"
@@ -142,7 +127,6 @@ if [ "$HAS_SHIPPED" = true ] && command -v agent-browser &>/dev/null; then
         TARGET_URL="$DEV_URL"
       fi
 
-      # Pre-create test account via API (skip signup dance)
       precreate_test_account
       case "$TEST_AUTH" in
         *created*) log "Test account pre-created" ;;
@@ -188,13 +172,11 @@ VERIFY_EOF
         --timeout-msg "VERIFY_FAIL: timed out" | ptee)
       rm -f "$VERIFY_PROMPT_FILE"
 
-      # Check if verification passed or failed
       if echo "$VERIFY_OUTPUT" | grep -q "VERIFY_FAIL"; then
         FAIL_REASON=$(echo "$VERIFY_OUTPUT" | grep "VERIFY_FAIL" | head -1 | sed 's/.*VERIFY_FAIL: *//')
         log "Verification FAILED: $FAIL_REASON"
         log "Attempting fix..."
 
-        # Second agent session to fix the issue
         FIX_PROMPT_FILE=$(mktemp)
         cat > "$FIX_PROMPT_FILE" <<FIX_EOF
 The QA verification of your code change found an issue. Fix it.
@@ -234,20 +216,17 @@ FIX_EOF
       log "Dev server did not start within 30s"
     fi
 
-    # Kill dev server, backend, and anything left on the dev ports
     stop_dev_servers
   else
     log "No dev/start/preview script found — skipping verification"
   fi
 
-  # Attach screenshots to PR
   SCREENSHOTS=$(find "$SCREENSHOT_DIR" -name '*.png' -type f 2>/dev/null)
   if [ -n "$SCREENSHOTS" ] && [ -n "$PR_NUM" ]; then
-    # Commit screenshots to branch and build the PR comment in one pass
     cd "$REPO_DIR" || exit 1
     COMMENT="## Verification Screenshots\n"
     for img in "$SCREENSHOT_DIR"/*.png; do
-      [ -e "$img" ] || continue  # empty glob — no screenshots
+      [ -e "$img" ] || continue
       IMG_NAME=$(basename "$img")
       cp "$img" "$REPO_DIR/" && git add -- "$IMG_NAME"
       COMMENT="${COMMENT}\n### ${IMG_NAME%.png}\n![${IMG_NAME}](https://github.com/${GH_REPO_SLUG}/blob/${BRANCH}/${IMG_NAME}?raw=true)\n"
@@ -259,7 +238,6 @@ FIX_EOF
       --body "$(echo -e "$COMMENT")" 2>&1 | ptee
     log "Screenshots attached to PR #$PR_NUM"
   elif [ -n "$PR_NUM" ]; then
-    # Determine why screenshots are missing
     REASON="unknown"
     if ! command -v agent-browser &>/dev/null; then
       REASON="agent-browser is not installed"
@@ -282,7 +260,6 @@ ${VERIFY_TAIL:-no output}
   fi
 fi
 
-# ── UPDATE ────────────────────────────────────────────────
 stage "UPDATE"
 if [ "$HAS_SHIPPED" = true ] && [ "${QUALITY_OK:-true}" = true ]; then
   FACTORY_OK=true
@@ -293,7 +270,6 @@ else
 fi
 
 if [ "$HAS_SHIPPED" = true ]; then
-  # Close linked GitHub issue only on full success
   if [ "$FACTORY_OK" = true ]; then
     ISSUE_REF=$(echo "$TASK_BODY" | sed -n '/^---$/,/^---$/p' | grep '^issue:' | sed 's/^issue: *//')
     if [ -n "$ISSUE_REF" ]; then
@@ -317,9 +293,7 @@ else
   log "Skipped — task did not ship"
 fi
 
-# ── DONE ──────────────────────────────────────────────────
 stage "DONE"
-# Framework FACTORY_RESULT: shipped AND quality OK. Agent print is a breadcrumb only.
 if [ "$FACTORY_OK" = true ]; then
   log "FACTORY_RESULT:SUCCESS"
   log "Factory run successful"
@@ -330,7 +304,6 @@ else
   update_status "$TASK_NAME ✗ failed"
 fi
 
-# Clean up worktree and lock
 if [ -n "$WORKTREE_DIR" ] && [ -d "$WORKTREE_DIR" ] && [ -n "$MAIN_REPO_DIR" ]; then
   cd "$DETROIT" || exit 1
   git -C "$MAIN_REPO_DIR" worktree remove --force "$WORKTREE_DIR" 2>/dev/null || rm -rf "$WORKTREE_DIR"
@@ -340,6 +313,5 @@ if [ -n "$TASK_FILE" ]; then
   rm -rf "$LOCK_DIR/$(basename "$TASK_FILE").lock" 2>/dev/null
 fi
 
-# Exit based on full factory success (shipped + quality)
 [ "$FACTORY_OK" = true ]
 }

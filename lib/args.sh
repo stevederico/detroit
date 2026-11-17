@@ -1,9 +1,4 @@
 # shellcheck shell=bash
-# lib/args.sh — CLI flag parsing.
-# parse_args sets: MODE (run|parallel|verify|issues|shift|help), PARALLEL_N,
-# VERIFY_REPO, VERIFY_PR, ISSUES_REPO, DRY_RUN, REPO_FILTER. Returns 2 on bad input.
-# Flags combine (e.g. --parallel 2 --dry-run); parallel/verify/issues are
-# mutually exclusive — last one wins. --shift with any of them is an error.
 
 usage() {
   cat <<'USAGE'
@@ -30,7 +25,7 @@ parse_args() {
   VERIFY_PR=""
   ISSUES_REPO=""
   DRY_RUN=false
-  REPO_FILTER="${DETROIT_REPO:-}"   # env seeds it; --repo overrides
+  REPO_FILTER="${DETROIT_REPO:-}"
   local shift_flag=false other_mode=""
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -42,7 +37,7 @@ parse_args() {
       --parallel)
         MODE=parallel; other_mode=--parallel
         case "${2:-}" in
-          *[!0-9]*|"") ;;  # no numeric arg — keep default
+          *[!0-9]*|"") ;;
           *) PARALLEL_N="$2"; shift ;;
         esac
         shift ;;
@@ -51,7 +46,7 @@ parse_args() {
         if [ -z "${2:-}" ]; then echo "error: --verify needs owner/repo" >&2; usage >&2; return 2; fi
         VERIFY_REPO="$2"; shift 2
         case "${1:-}" in
-          *[!0-9]*|"") ;;  # no PR number
+          *[!0-9]*|"") ;;
           *) VERIFY_PR="$1"; shift ;;
         esac ;;
       --issues)

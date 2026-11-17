@@ -1,7 +1,4 @@
 #!/bin/bash
-# Tests for lib/agent.sh: default CLI, DETROIT_MODEL handling, and the local
-# model preflight. Stub CLIs print the args they got as their agent's stream
-# format. curl is stubbed: no test reaches a real endpoint.
 . "$(dirname "$0")/helpers.sh"
 
 AGENT_ID=0
@@ -10,7 +7,6 @@ LOGFILE="$TESTDIR/test.log"; : > "$LOGFILE"
 
 stub_bin claude 'printf "{\"type\":\"result\",\"result\":\"claude %s\"}\n" "$*"'
 stub_bin grok 'printf "{\"params\":{\"update\":{\"sessionUpdate\":\"agent_message_chunk\",\"content\":{\"text\":\"grok %s\"}}}}\n" "$*"'
-# opencode: a wrapper banner, a tool call, a text part carrying the args, an error
 stub_bin opencode 'echo "mise ~/.config/mise/config.toml tools: opencode"
 printf "{\"type\":\"tool_use\",\"part\":{\"tool\":\"bash\",\"state\":{\"input\":{\"command\":\"npm test\"}}}}\n"
 printf "{\"type\":\"tool_use\",\"part\":{\"tool\":\"read\",\"state\":{\"input\":{\"filePath\":\"/repo/a.md\"}}}}\n"
@@ -18,7 +14,6 @@ printf "{\"type\":\"text\",\"part\":{\"type\":\"text\",\"text\":\"opencode %s\"}
 printf "{\"type\":\"error\",\"error\":{\"name\":\"UnknownError\",\"data\":{\"message\":\"server fell over\"}}}\n"'
 PROMPT="$TESTDIR/prompt.txt"; echo "hello" > "$PROMPT"
 
-# agent_out <env...> -- run_agent in a fresh shell so DETROIT_CLI is re-read
 agent_out() {
   env "$@" bash -c "AGENT_ID=0; LOGFILE='$LOGFILE'; . '$DETROIT_ROOT/lib/core.sh'; . '$DETROIT_ROOT/lib/agent.sh'; run_agent '$PROMPT' --model sonnet"
 }
@@ -39,7 +34,6 @@ assert_not_contains "$OUT" "sonnet" "DETROIT_MODEL replaces the caller's alias"
 OUT=$(agent_out DETROIT_AGENT=grok DETROIT_MODEL=grok-4.7-build)
 assert_contains "$OUT" "--model grok-4.7-build" "DETROIT_MODEL applies to grok"
 
-# grok 1.0.40 stream: text in small chunks, tool_call events, usage/end noise
 stub_bin grok 'printf "%s\n" \
   "{\"type\":\"available_commands\",\"tools\":[]}" \
   "{\"type\":\"text\",\"data\":\"route:\"}" \
@@ -80,7 +74,6 @@ assert_contains "$OUT" "--timeout '5s' is not whole seconds" "non-numeric --time
 assert_contains "$OUT" "grok " "non-numeric --timeout still runs the agent"
 
 echo "agent_preflight:"
-# preflight <env...> -- agent_preflight in a fresh shell; prints the log lines
 preflight() {
   env "$@" bash -c "AGENT_ID=0; LOGFILE='$LOGFILE'; . '$DETROIT_ROOT/lib/core.sh'; . '$DETROIT_ROOT/lib/agent.sh'; agent_preflight"
 }
@@ -115,7 +108,6 @@ stub_bin curl 'echo "<html>proxy error</html>"'
 assert_rc 1 "HTTP 200 that is not a model list: fails" preflight DETROIT_AGENT=opencode
 
 echo "factory.sh preflight:"
-# Real entry point against a copied tree: a failed preflight stops a run before PICK
 mkdir -p "$TESTDIR/tree/tasks"
 cp -R "$DETROIT_ROOT/factory.sh" "$DETROIT_ROOT/lib" "$TESTDIR/tree/"
 stub_bin curl 'exit 7'

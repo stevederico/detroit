@@ -1,6 +1,4 @@
 # shellcheck shell=bash
-# lib/verify-prs.sh — --verify mode: screenshot open PRs for a repo.
-# Uses the shared dev-server helpers in lib/devserver.sh.
 
 mode_verify() {
   REPO="$VERIFY_REPO"
@@ -19,7 +17,6 @@ mode_verify() {
   echo ""
 
   cd "$REPO_DIR" || exit 1
-  # Clean up any stale worktrees from previous runs
   rm -rf .worktrees 2>/dev/null
   git worktree prune 2>/dev/null
   BASE_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
@@ -38,12 +35,10 @@ mode_verify() {
 
   PR_LIST=$(mktemp)
   if [ -n "$PR_FILTER" ]; then
-    # Single PR
     gh pr view "$PR_FILTER" --repo "$REPO" --json number,title,headRefName 2>/dev/null | \
       python3 -c "import json,sys; pr=json.loads(sys.stdin.read()); print(f\"{pr['number']}|{pr['headRefName']}|{pr['title']}\")" > "$PR_LIST"
     echo "Verifying PR #$PR_FILTER"
   else
-    # All open PRs
     PRS=$(gh pr list --repo "$REPO" --state open --json number,title,headRefName --limit 50 2>/dev/null)
     PR_COUNT=$(echo "$PRS" | python3 -c "import json,sys; print(len(json.loads(sys.stdin.read())))")
     echo "Found $PR_COUNT open PRs"
@@ -62,7 +57,6 @@ for pr in prs:
     SCREENSHOT_DIR="$LOGDIR/screenshots/pr-$PR_NUM"
     mkdir -p "$SCREENSHOT_DIR"
 
-    # Checkout branch directly (no worktree — need real DB, .env, etc.)
     cd "$REPO_DIR" || continue
     rm -rf .worktrees 2>/dev/null
     git worktree prune 2>/dev/null
@@ -139,7 +133,7 @@ Steps:
       cd "$REPO_DIR" || continue
       COMMENT="## Verification Screenshots\n"
       for img in "$SCREENSHOT_DIR"/*.png; do
-        [ -e "$img" ] || continue  # empty glob — no screenshots
+        [ -e "$img" ] || continue
         IMG_NAME=$(basename "$img")
         cp "$img" "$REPO_DIR/" && git add -- "$IMG_NAME"
         COMMENT="${COMMENT}\n### ${IMG_NAME%.png}\n![${IMG_NAME}](https://github.com/${GH_OWNER}/${REPO_NAME}/blob/${BRANCH}/${IMG_NAME}?raw=true)\n"

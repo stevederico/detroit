@@ -1,12 +1,8 @@
 # shellcheck shell=bash
-# lib/modes.sh — --parallel and --issues entry modes.
 
-# mode_parallel — spawn PARALLEL_N factory agents and summarize their statuses
 mode_parallel() {
   local AGENTS="$PARALLEL_N"
   rm -f "$STATUS_DIR"/agent-* 2>/dev/null
-  # Children re-exec `bash $0` without args — pass the repo filter via env so
-  # each parallel agent honors --repo too.
   export DETROIT_REPO="${REPO_FILTER:-}"
 
   echo "━━━ DETROIT: $AGENTS parallel agents ━━━"
@@ -24,13 +20,11 @@ mode_parallel() {
   done
   echo ""
 
-  # Wait for all agents (output streams live with [AN] prefix)
   local FAILED=0
   for pid in $PIDS; do
     wait "$pid" || FAILED=$((FAILED + 1))
   done
 
-  # Final summary
   echo ""
   echo "━━━ SUMMARY ━━━"
   local STATUS
@@ -46,7 +40,6 @@ mode_parallel() {
   exit $FAILED
 }
 
-# mode_issues — pull open GitHub issues labeled 'detroit' into tasks/
 mode_issues() {
   REPO="$ISSUES_REPO"
 

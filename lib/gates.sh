@@ -1,15 +1,5 @@
 # shellcheck shell=bash
-# lib/gates.sh — deterministic rule gates.
-# check_gate reads outer-scope: BASE_BRANCH, BRANCH, REPO_DIR, PRE_VERSION, LOGFILE.
-# run_gate_bullets / run_all_gates accumulate into GATE_FAILURES, GATE_CUSTOM, GATE_SEEN.
 
-# run_repo_tests — deterministically run the target repo's tests in $REPO_DIR.
-# Command resolution: DETROIT_TEST_CMD env override > package.json scripts.test
-# (npm test). No package.json → skip-pass (non-Node). package.json with missing
-# or npm-placeholder scripts.test → fail (Node projects must have real tests).
-# Installs node_modules first if missing. Timeout: DETROIT_TEST_TIMEOUT (300s).
-# On failure the tail lands in TEST_GATE_OUTPUT for the FIX prompt.
-# Returns 0 on pass/skip, 1 on failure or timeout.
 run_repo_tests() {
   TEST_GATE_OUTPUT=""
   local cmd="" script out rc=0
@@ -51,10 +41,6 @@ run_repo_tests() {
   [ "$rc" -eq 0 ]
 }
 
-# scan_secret_diff — scan the ADDED lines of the branch diff for secret-shaped
-# content: AWS/Anthropic/GitHub/Slack token formats, PEM private-key headers,
-# and quoted key/token/password assignments (12+ chars). Lockfiles excluded
-# (integrity hashes false-positive). Returns 0 if a secret is found.
 scan_secret_diff() {
   local added
   added=$(git diff "$BASE_BRANCH...$BRANCH" -- . ':(exclude)package-lock.json' ':(exclude)bun.lock' ':(exclude)yarn.lock' 2>/dev/null \
@@ -72,19 +58,11 @@ scan_secret_diff() {
   return 1
 }
 
-# check_gate <gate-text>
-# Dispatches a natural-language rule bullet to a framework-recognized check.
-# Uses bash glob keyword matching against gate text.
-# Returns: 0 = pass, 1 = fail (recognized + violated), 2 = custom (unrecognized).
 check_gate() {
   local gate="$1"
   local gate_lower
   gate_lower=$(echo "$gate" | tr '[:upper:]' '[:lower:]')
 
-  # Inline `check: <shell>` suffix takes precedence over keyword matching.
-  # Format: bullet text `check: <shell command>`
-  # Exit 0 = pass, non-zero = fail. Any bullet with a recognized check: suffix
-  # is deterministically verified and never falls through to "custom".
   local inline_check
   inline_check=$(echo "$gate" | grep -oE '`check:[^`]*`' | tail -n1 | sed -E 's/^`check:[[:space:]]*//; s/`$//')
   if [ -n "$inline_check" ]; then
@@ -95,14 +73,9 @@ check_gate() {
     return $?
   fi
 
-  # *credential*/*token* here still shadow the *hardcoded*credential* case
-  # below, but harmlessly — both run the same scan_secret_diff content scan;
-  # this case just adds the filename check on top.
   # shellcheck disable=SC2221,SC2222
   case "$gate_lower" in
     *secret*|*.env*|*.pem*|*.key*|*credential*|*token*)
-      # Filename check: .env anchored (config.envelope.js must not match),
-      # .pem/.key by extension, credential-ish names anywhere in the path.
       git diff "$BASE_BRANCH...$BRANCH" --name-only 2>/dev/null \
         | grep -qE '(^|/)\.env(\.|$)|\.(pem|key)$|credentials|secrets|tokens' && return 1
       scan_secret_diff && return 1
@@ -122,8 +95,6 @@ check_gate() {
       return 0
       ;;
     *test*pass*|*pass*test*)
-      # Deterministic: the framework runs the repo's tests itself; the exit
-      # code decides. (Replaces the old grep-the-log-for-FAIL heuristic.)
       run_repo_tests || return 1
       return 0
       ;;
@@ -162,25 +133,17 @@ check_gate() {
   esac
 }
 
-# run_gate_bullets
-# Reads rule-bullet lines on stdin and dispatches each through check_gate.
-# Appends verified failures to GATE_FAILURES and forwarded (unrecognized, plain)
-# rules to GATE_CUSTOM — both outer-scope. Must be fed via process substitution,
-# not a pipe, so it runs in the caller's shell and its writes persist.
 run_gate_bullets() {
   local line raw strict gate
   while IFS= read -r line; do
     raw=$(echo "$line" | sed -E 's/^[[:space:]]*-[[:space:]]*//' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')
     [ -z "$raw" ] && continue
-    case "$raw" in \[*\]) continue ;; esac  # skip section header labels
+    case "$raw" in \[*\]) continue ;; esac
     strict=false
     gate="$raw"
     case "$raw" in
       "!"*) strict=true; gate=$(echo "$raw" | sed -E 's/^![[:space:]]*//') ;;
     esac
-    # Dedupe: a category may be declared in more than one stage (e.g. security in
-    # test and ship). Checks are deterministic with no state change between stage
-    # groups, so gate each unique rule once. (Pure-bash membership; bash 3.2-safe.)
     case $'\n'"$GATE_SEEN"$'\n' in
       *$'\n'"$gate"$'\n'*) continue ;;
     esac
@@ -190,7 +153,6 @@ run_gate_bullets() {
       0) if [ "$strict" = true ]; then log "PASS: ! $gate"; else log "PASS: $gate"; fi ;;
       1) if [ "$strict" = true ]; then log "FAIL: ! $gate"; else log "FAIL: $gate"; fi
          GATE_FAILURES="${GATE_FAILURES}\n- $gate"
-         # Test gate captures WHY it failed — thread it into the FIX prompt
          if [ -n "${TEST_GATE_OUTPUT:-}" ]; then
            GATE_FAILURES="${GATE_FAILURES}\n  test output (last lines):\n$TEST_GATE_OUTPUT"
            TEST_GATE_OUTPUT=""
@@ -206,11 +168,6 @@ run_gate_bullets() {
   done
 }
 
-# run_all_gates <factory.md path>
-# Resets the gate accumulators, then gates every rule. If the factory declares a
-# v2 `## stages` section, gates run grouped by stage in declared order (prompt
-# stages like triage/plan are skipped here). Otherwise every section is gated in
-# one flat pass — identical to v1 behavior.
 run_all_gates() {
   local file="$1" stages sline sname sval
   GATE_FAILURES=""

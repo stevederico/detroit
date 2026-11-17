@@ -1,12 +1,9 @@
 #!/bin/bash
-# Tests for scheduling/: night-shift.sh order and exit codes against a fake
-# factory.sh, and the unit files' key settings. Never touches systemd.
 . "$(dirname "$0")/helpers.sh"
 
 TREE="$TESTDIR/tree"
 mkdir -p "$TREE/scheduling"
 cp "$DETROIT_ROOT/scheduling/night-shift.sh" "$TREE/scheduling/"
-# Fake factory.sh: records "<agent> <args>", fails when FAIL_AGENT matches
 cat > "$TREE/factory.sh" <<EOF
 #!/bin/bash
 echo "\$DETROIT_AGENT \$*" >> "$TESTDIR/calls"
@@ -14,7 +11,6 @@ echo "\$DETROIT_AGENT \$*" >> "$TESTDIR/calls"
 exit 0
 EOF
 
-# night <env...> — run night-shift.sh with a fresh call log; sets RC and CALLS
 night() {
   rm -f "$TESTDIR/calls"
   RC=0

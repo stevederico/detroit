@@ -1,13 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034  # pipeline globals are consumed by postship.sh/gates.sh/core.sh
-# lib/pipeline.sh — pre-ship pipeline: PICK → ROUTE → PREPARE → SCAFFOLD →
-# CODE (via code-stage.sh) → GATES → FIX → SHIP. State is global on purpose:
-# INT trap and lib/postship.sh read TASK_FILE, REPO_DIR, BRANCH, BASE_BRANCH,
-# MAIN_REPO_DIR, WORKTREE_DIR, HAS_SHIPPED, QUALITY_OK, TASK_BODY, TASK_NAME,
-# TASK_PROMPT.
 
 run_pipeline() {
-# ── PICK (TRIAGE) ─────────────────────────────────────────
 stage "PICK"
 update_status "picking task..."
 log "Reading tasks from $TASK_DIR"
@@ -15,8 +9,6 @@ QUALITY_OK=true
 HAS_SHIPPED=false
 FACTORY_OK=false
 
-# First free task, locked (lib/core.sh pick_task). With REPO_FILTER set
-# (--repo / DETROIT_REPO), only tasks whose frontmatter repo: matches.
 TASK_FILE=$(pick_task --lock)
 
 if [ -z "$TASK_FILE" ]; then
@@ -28,7 +20,6 @@ fi
 TASK_NAME=$(basename "$TASK_FILE" .md)
 TASK_BODY=$(cat "$TASK_FILE")
 
-# Parse optional frontmatter for repo field
 TASK_REPO=""
 IS_NEW_REPO=false
 if echo "$TASK_BODY" | head -1 | grep -q '^---$'; then
@@ -42,15 +33,12 @@ log "Task: $TASK_NAME"
 log "Repo: ${TASK_REPO:-(new repo)}"
 update_status "$TASK_NAME — picked"
 
-# ── ROUTE (TRIAGE) ────────────────────────────────────────
 stage "ROUTE"
 update_status "$TASK_NAME — routing"
 
 if [ -n "$TASK_REPO" ]; then
-  # 1. Check local directory
   REPO_DIR=$(find "$PROJECTS" -maxdepth 1 -iname "$TASK_REPO" -type d 2>/dev/null | head -1)
 
-  # 2. Not local — try cloning from GitHub (if gh is available)
   if [ -z "$REPO_DIR" ] && command -v gh &>/dev/null; then
     log "Not found locally, searching GitHub..."
     GH_REPO=$(gh repo list --limit 500 --json name,nameWithOwner 2>/dev/null | \
@@ -68,13 +56,11 @@ if [ -n "$TASK_REPO" ]; then
     fi
   fi
 
-  # 3. Not found anywhere — error
   if [ -z "$REPO_DIR" ]; then
     log "Could not find repo '$TASK_REPO' locally or on GitHub"
     exit 1
   fi
 else
-  # No repo specified — create new
   REPO_NAME=$(echo "$TASK_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//')
   REPO_DIR="$PROJECTS/$REPO_NAME"
   if [ "$DRY_RUN" = true ]; then
@@ -91,14 +77,12 @@ fi
 REPO_NAME=$(basename "$REPO_DIR")
 log "Repo: $REPO_NAME ($REPO_DIR)"
 
-# ── PREPARE (ENVIRONMENT) ─────────────────────────────────
 stage "PREPARE"
 update_status "$TASK_NAME — preparing"
 cd "$REPO_DIR" || { log "Cannot cd to $REPO_DIR"; exit 1; }
 if [ "$IS_NEW_REPO" = false ]; then
   HAS_REMOTE=$(git remote 2>/dev/null | head -1)
   if [ -n "$HAS_REMOTE" ]; then
-    # Detect default branch
     BASE_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
     if [ -z "$BASE_BRANCH" ]; then
       BASE_BRANCH=$(git branch -r 2>/dev/null | grep -oE 'origin/(main|master)' | head -1 | sed 's@origin/@@')
@@ -121,7 +105,6 @@ BRANCH="detroit/$TASK_NAME"
 if [ "$IS_NEW_REPO" = false ] && [ "$DRY_RUN" = false ]; then
   MAIN_REPO_DIR="$REPO_DIR"
   git branch -D "$BRANCH" 2>/dev/null
-  # Use worktree for isolation (parallel-safe)
   WORKTREE_DIR="$REPO_DIR/.worktrees/$TASK_NAME"
   rm -rf "$WORKTREE_DIR" 2>/dev/null
   git worktree prune 2>/dev/null
@@ -131,14 +114,11 @@ if [ "$IS_NEW_REPO" = false ] && [ "$DRY_RUN" = false ]; then
 fi
 log "Branch: $BRANCH"
 
-# ── SCAFFOLD (BUILD) ──────────────────────────────────────
 stage "SCAFFOLD"
 update_status "$TASK_NAME — scaffolding"
 if [ "$IS_NEW_REPO" = false ] && [ ! -d "$REPO_DIR/.github/workflows" ] && [ -f "$REPO_DIR/package.json" ]; then
   log "No CI workflow found — generating .github/workflows/ci.yml"
   mkdir -p "$REPO_DIR/.github/workflows"
-  # Detect runtime and scripts; node version comes from factory.md `## build`
-  # (`node NN` bullet) so spec and generated workflow can't disagree
   CI_RUNTIME="node"
   CI_NODE_VERSION=$(factory_section "build" "$DETROIT/factory.md" | sed -nE 's/^[-*+[:space:]]*node[[:space:]]+([0-9]+).*/\1/p' | head -1)
   CI_NODE_VERSION="${CI_NODE_VERSION:-22}"
@@ -196,13 +176,11 @@ else
   log "CI workflow already present or not applicable"
 fi
 
-# Save pre-code state for lint checks
 PRE_VERSION=""
 if [ -f "$REPO_DIR/package.json" ]; then
   PRE_VERSION=$(python3 -c "import json; print(json.load(open('package.json')).get('version',''))" 2>/dev/null)
 fi
 
-# ── Dry run summary ───────────────────────────────────────
 if [ "$DRY_RUN" = true ]; then
   echo "" | ptee
   log "━━━ DRY RUN SUMMARY ━━━"
@@ -220,16 +198,10 @@ if [ "$DRY_RUN" = true ]; then
   exit 0
 fi
 
-# ── CODE (via lib/code-stage.sh) ──────────────────────────
 run_code_stage
 
-# Only run downstream gates if code stage actually shipped — verified facts
-# (commits + PR/remote), not the agent's FACTORY_RESULT print
 verify_shipped
 
-# ── GATES (dispatch every rule bullet to check_gate) ─────
-# Rules prefixed with `!` are strict: framework must recognize and verify them.
-# Plain rules fall through to the agent when unrecognized.
 stage "GATES"
 update_status "$TASK_NAME — checking gates"
 run_all_gates "$DETROIT/factory.md"
@@ -241,7 +213,6 @@ else
   log "Gate failures detected"
 fi
 
-# ── FIX (agent fixes gate failures — max 2 attempts) ─────
 if [ -n "$GATE_FAILURES" ] && [ "$HAS_SHIPPED" = true ]; then
   stage "FIX"
   update_status "$TASK_NAME — fixing gates"
@@ -276,7 +247,6 @@ FIX_EOF
     run_agent "$FIX_PROMPT_FILE" --model sonnet --timeout 120 | ptee
     rm -f "$FIX_PROMPT_FILE"
 
-    # Re-run gates (stage-aware; resets accumulators)
     run_all_gates "$DETROIT/factory.md"
 
     if [ -z "$GATE_FAILURES" ]; then
@@ -293,7 +263,6 @@ if [ -n "$GATE_FAILURES" ]; then
   quality_fail "gates" "remaining failures after max fix attempts"
 fi
 
-# ── SHIP ──────────────────────────────────────────────────
 stage "SHIP"
 update_status "$TASK_NAME — shipping"
 if [ "$HAS_SHIPPED" = true ]; then

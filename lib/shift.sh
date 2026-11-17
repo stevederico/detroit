@@ -1,30 +1,4 @@
 # shellcheck shell=bash
-# lib/shift.sh — --shift mode: one worker runs the normal pipeline task after
-# task while the resetting usage window has room, then stops.
-# Spec: docs/budget-shift.md. Reads Omarchy's usage record; never calls a
-# provider usage API itself. Never invents tasks, never replays tasks/failed/.
-#
-# A local agent (DETROIT_AGENT=opencode, lib/agent.sh agent_is_local) has no
-# usage window. Its shift skips the usage record and runs until the queue is
-# empty, DETROIT_SHIFT_MAX_HOURS has passed, or the model endpoint is down.
-# Every shift stops before a task when agent_preflight fails (gh signed out,
-# local model down or not serving DETROIT_MODEL).
-#
-# Env:
-#   DETROIT_BUDGET_STOP    stop at this session/weekly fraction (default 0.80)
-#   DETROIT_SHIFT_PAUSE    seconds between tasks (default 30)
-#   DETROIT_USAGE_MAX_AGE  usage record older than this is stale (default 900)
-#   DETROIT_SHIFT_MAX_HOURS  local agent only: start no task after this many
-#                          hours (default 6, fractions allowed)
-#   DETROIT_AGENT          which usage record + Herdr agent kind (default grok)
-#   DETROIT_MODEL          also count a matching model-scoped limit row
-#
-# Only one shift runs at a time ($DETROIT/.shift.lock). Tasks it already ran
-# go in DETROIT_SHIFT_SKIP, which the child's PICK honors (lib/core.sh
-# pick_task), so a task left in tasks/ never blocks the rest of the queue.
-#
-# Test seams (override after sourcing): shift_run_task, shift_sleep, shift_now.
-# Internal timeouts: SHIFT_HERDR_TIMEOUT (10s), SHIFT_REFRESH_TIMEOUT (120s).
 
 shift_agent() { printf '%s\n' "${DETROIT_AGENT:-grok}"; }
 
@@ -32,12 +6,6 @@ shift_usage_file() {
   printf '%s/omarchy/agents/usage/%s.json\n' "${XDG_STATE_HOME:-$HOME/.local/state}" "$(shift_agent)"
 }
 
-# shift_read_usage <file> — print one line:
-#   ok <session> <weekly>   fractions 0..1, "-" when that window is absent
-#   missing                 no file or unreadable JSON
-#   stale                   older than DETROIT_USAGE_MAX_AGE
-#   noreset                 no resetting session/weekly window (prepaid balance)
-# Age comes from updatedAt, falling back to the file mtime.
 shift_read_usage() {
   USAGE_FILE="$1" MAX_AGE="${DETROIT_USAGE_MAX_AGE:-900}" MODEL="${DETROIT_MODEL:-}" python3 - <<'PY'
 import datetime as dt, json, os, re, time
@@ -74,7 +42,6 @@ for row in rec.get("limits") or []:
         continue
     title = str(row.get("title") or "")
     if title:
-        # Model-scoped row, e.g. "Fable Weekly": model name + window.
         m = re.match(r"^(.*)\s+(Session|Weekly)$", title)
         if not m or not model:
             continue
@@ -88,7 +55,6 @@ for row in rec.get("limits") or []:
     elif "weekly" in label or "7-day" in label:
         flat.setdefault("weekly", pct)
 
-# A model-scoped row never hides the account-wide one: take the fuller window.
 win = dict(flat)
 for k, v in scoped.items():
     win[k] = max(v, win.get(k, v))
@@ -99,13 +65,10 @@ print("ok", fmt("session"), fmt("weekly"))
 PY
 }
 
-# shift_at_or_above <pct> <stop> — true when pct >= stop ("-" never is)
 shift_at_or_above() {
   [ "$1" != "-" ] && awk -v p="$1" -v s="$2" 'BEGIN { exit !(p + 0 >= s + 0) }'
 }
 
-# shift_session_busy — true when a focused Herdr workspace has a working agent
-# of the same kind as DETROIT_AGENT (someone is using the budget by hand).
 shift_session_busy() {
   command -v herdr >/dev/null 2>&1 || return 1
   local ws agents t="${SHIFT_HERDR_TIMEOUT:-10}"
@@ -129,8 +92,6 @@ raise SystemExit(0 if busy else 1)
 PY
 }
 
-# shift_run_task — one no-flag factory run in a child, so its exits and
-# globals stay out of the loop. Returns the child's exit code.
 shift_run_task() {
   if [ "$DRY_RUN" = true ]; then
     DETROIT_REPO="${REPO_FILTER:-}" bash "$DETROIT/factory.sh" --dry-run
@@ -143,19 +104,12 @@ shift_sleep() { sleep "$1"; }
 
 shift_now() { date +%s; }
 
-# shift_cap_reached <start-epoch> <max-hours> — true once max-hours have passed
 shift_cap_reached() {
   awk -v now="$(shift_now)" -v start="$1" -v h="$2" 'BEGIN { exit !(now - start >= h * 3600) }'
 }
 
-# shift_status <text> — the shift's own status (web UI "agent shift"); the
-# child keeps agent-$AGENT_ID. Never put a task name here: the web UI marks a
-# task running when any status contains its name.
 shift_status() { echo "$1" > "$STATUS_DIR/agent-shift"; }
 
-# shift_lock — take $DETROIT/.shift.lock (mkdir + pid). A lock whose pid is
-# gone, or that never got a pid and is over a minute old, is taken over.
-# Sets SHIFT_LOCK_HELD on success, SHIFT_HOLDER on failure.
 shift_lock() {
   local lock="$DETROIT/.shift.lock" pid
   if ! mkdir "$lock" 2>/dev/null; then
@@ -178,14 +132,11 @@ shift_unlock() {
   SHIFT_LOCK_HELD=""
 }
 
-# shift_stop <reason> — log why the shift ended
 shift_stop() {
   log "Shift over: $1 ($SHIFT_RAN ran, $SHIFT_FAILED failed)"
   shift_status "$1"
 }
 
-# mode_shift — one worker, the loop from docs/budget-shift.md. Returns 0 on
-# every stop, including when another shift already holds the lock.
 mode_shift() {
   # shellcheck disable=SC2034  # read by log() in lib/core.sh
   LOGFILE="$LOGDIR/$TIMESTAMP-shift.log"
@@ -219,12 +170,10 @@ shift_loop() {
   fi
 
   while true; do
-    # 0. Local agent: the clock is the only budget
     if [ "$is_local" = true ] && shift_cap_reached "$start" "$max_hours"; then
       shift_stop "idle — shift cap reached (${max_hours}h)"; return 0
     fi
 
-    # 1. Someone is driving this agent by hand — leave the budget to them
     if shift_session_busy; then
       log "idle — session in use"
       shift_status "idle — session in use"
@@ -232,9 +181,7 @@ shift_loop() {
       continue
     fi
 
-    # 2-4. A local model has no usage window to read
     if [ "$is_local" != true ]; then
-      # 2-3. Fresh usage or nothing; one refresh attempt
       usage=$(shift_read_usage "$file")
       case "$usage" in
         missing|stale)
@@ -251,7 +198,6 @@ shift_loop() {
       read -r _ session weekly <<< "$usage"
       log "Usage: session $session, weekly $weekly"
 
-      # 4. Window full
       if shift_at_or_above "$session" "$stop"; then
         shift_stop "idle — session window at $session (stop $stop)"; return 0
       fi
@@ -260,23 +206,16 @@ shift_loop() {
       fi
     fi
 
-    # 5. Something to do that this shift has not run yet
     next=$(pick_task)
     if [ -z "$next" ]; then
       shift_stop "idle — no tasks"; return 0
     fi
     name=$(basename "$next")
 
-    # 5b. The task can start: gh signed in, local model up and serving
-    # DETROIT_MODEL (lib/agent.sh agent_preflight). Checked after the queue so
-    # an empty night logs "no tasks", not a down endpoint.
     if [ "$DRY_RUN" != true ] && ! agent_preflight; then
       shift_stop "idle — $PREFLIGHT_REASON"; return 0
     fi
 
-    # 6. The same path as a no-flag factory.sh. Whatever happens, this task
-    # is done for this shift: shipped, failed, or left in tasks/ (dry run, or
-    # stopped before SHIP) — the child's PICK skips it from now on.
     log "Shift task $((SHIFT_RAN + 1)): $name"
     shift_status "shift running task $((SHIFT_RAN + 1))"
     rc=0
@@ -286,7 +225,6 @@ shift_loop() {
     log "Shift task $name exited $rc"
     DETROIT_SHIFT_SKIP="${DETROIT_SHIFT_SKIP:+$DETROIT_SHIFT_SKIP$nl}$name"
 
-    # 7. Breathe, then re-check the budget
     shift_sleep "$pause"
   done
 }

@@ -1,31 +1,11 @@
 # shellcheck shell=bash
-# lib/agent.sh — agent CLI invocation (claude, dotbot, grok, opencode).
 
-# ── Agent configuration ───────────────────────────────────
-# DETROIT_AGENT: grok (default), claude, dotbot, opencode
-# DETROIT_PROVIDER: xai (default) — provider for dotbot (xai, anthropic, openai, ollama)
-# DETROIT_MODEL: model for every call. For claude it
-#   replaces the caller's --model alias, so --shift checks the budget it spends.
-#   For opencode it is provider/model (default: the local Studio model below).
-# DETROIT_MODEL_ENDPOINT: OpenAI-style base URL agent_preflight checks for
-#   opencode (default http://127.0.0.1:8090/v1); "none" skips the check.
-# DETROIT_PREFLIGHT_TIMEOUT: seconds for each agent_preflight call (default 10).
 DETROIT_CLI="${DETROIT_AGENT:-grok}"
 OPENCODE_DEFAULT_MODEL="studio/mlx-community/Qwen3-Coder-Next-4bit"
 OPENCODE_DEFAULT_ENDPOINT="http://127.0.0.1:8090/v1"
 
-# agent_is_local — true when the agent runs on a local model: no usage window
-# to budget against (lib/shift.sh), and an endpoint that can be down.
 agent_is_local() { [ "${DETROIT_AGENT:-grok}" = opencode ]; }
 
-# agent_preflight — true when a task can start. Checks, in order:
-#   1. gh has a token (`gh auth token`). SHIP opens the PR with it. All agents.
-#   2. opencode only: GET <endpoint>/models answers, and its data[].id list
-#      has the model id from DETROIT_MODEL (the part after provider/). An MLX
-#      server asked for a model it is not serving tries to load that model.
-# Each call is cut off after DETROIT_PREFLIGHT_TIMEOUT. On failure logs why,
-# sets PREFLIGHT_REASON ("gh not authenticated", "model endpoint down",
-# "model not served") and returns 1.
 # shellcheck disable=SC2034  # PREFLIGHT_REASON is read by factory.sh and lib/shift.sh
 agent_preflight() {
   local t="${DETROIT_PREFLIGHT_TIMEOUT:-10}" endpoint url model body rc=0
@@ -41,7 +21,6 @@ agent_preflight() {
   url="${endpoint%/}/models"
   model="${DETROIT_MODEL:-$OPENCODE_DEFAULT_MODEL}"
   model="${model#*/}"
-  # -sS: stdout is the body on success, stderr the error on failure
   body=$(curl -fsS -m "$t" "$url" 2>&1) || rc=$?
   if [ "$rc" != 0 ]; then
     PREFLIGHT_REASON="model endpoint down"
@@ -62,11 +41,6 @@ sys.exit(0 if os.environ["MODEL_ID"] in ids else 1)'; then
   return 0
 }
 
-# run_agent <prompt_file> [--model <model>] [--timeout <secs>] [--timeout-msg <msg>] [--verbose]
-# Runs the configured agent CLI and streams parsed output to stdout. The
-# parsers read the timeout from AGENT_TIMEOUT / AGENT_TIMEOUT_MSG (env, so a
-# quote in the message cannot break the Python). A --timeout that is not a
-# whole number of seconds is logged and treated as none.
 run_agent() {
   local prompt_file="$1"; shift
   local model="" timeout_secs=0 timeout_msg="timed out" verbose=""
@@ -153,9 +127,6 @@ for line in sys.stdin:
       fi
       ;;
     grok)
-      # Official xAI Grok CLI (`grok`). Signs in with the subscription
-      # (~/.grok/auth.json) or XAI_API_KEY. Like dotbot, ignores the caller's
-      # --model alias (claude-specific) and honors DETROIT_MODEL.
       # Docs: https://docs.x.ai/build/cli/headless-scripting
       # Stream formats: 1.0.40 sends {"type":"text","data":...} chunks a few
       # words at a time and {"type":"tool_call",...} per tool; older CLIs sent
@@ -212,14 +183,7 @@ if mid_line: print('', flush=True)
 "
       ;;
     opencode)
-      # opencode headless (`opencode run`). Like grok, ignores the caller's
-      # --model alias (claude-specific) and honors DETROIT_MODEL. --auto
-      # approves every permission that is not explicitly denied. Lines that
-      # are not JSON events (the mise wrapper's banner) are dropped.
       local -a args=(opencode run --auto --format json -m "${DETROIT_MODEL:-$OPENCODE_DEFAULT_MODEL}")
-      # The parser's alarm only ends the read. A local model that has gone
-      # quiet never hits the closed pipe, so the CLI and every process it
-      # started (tool commands run in their own sessions) are cut off too.
       if [ "$timeout_secs" -gt 0 ]; then
         args=(with_timeout "$((timeout_secs + 2))" "${args[@]}")
       fi

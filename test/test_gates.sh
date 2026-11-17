@@ -1,5 +1,4 @@
 #!/bin/bash
-# Tests for lib/gates.sh — characterizes each check_gate case and the bullet runner.
 . "$(dirname "$0")/helpers.sh"
 
 AGENT_ID=0
@@ -9,9 +8,8 @@ TASK_FILE=""; WORKTREE_DIR=""; LOCK_DIR="$TESTDIR/.locks"; DETROIT="$DETROIT_ROO
 . "$DETROIT_ROOT/lib/core.sh"
 . "$DETROIT_ROOT/lib/factory-md.sh"
 . "$DETROIT_ROOT/lib/gates.sh"
-log() { echo "$1" >> "$LOGFILE"; }  # quiet log for tests
+log() { echo "$1" >> "$LOGFILE"; }
 
-# fresh_repo <name> — new fixture repo on branch detroit/test; sets globals, cds into it
 fresh_repo() {
   REPO_DIR="$TESTDIR/$1"
   make_repo "$REPO_DIR"
@@ -78,7 +76,6 @@ unset DETROIT_TEST_CMD
 assert_contains "$GATE_FAILURES" "boom-notice" "failing test output threaded into GATE_FAILURES"
 
 echo "secret content scan:"
-# Secret-shaped fixtures are concatenated so this test file never contains one itself
 AWS_FAKE="AKIA""BCDEFGHIJKLMNOPQ"
 GH_FAKE="ghp_""ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij"
 PEM_FAKE="-----BEGIN RSA"" PRIVATE KEY-----"

@@ -1,5 +1,11 @@
 # Changelog
 
+0.75.0
+
+  Gut old pipeline
+  Keep docs
+  Keep scheduling
+
 0.74.0
 
   Add design doc

@@ -1,9 +1,6 @@
 {
   "name": "detroit",
-  "version": "0.74.0",
-  "description": "Autonomous code factory. Reads task files from tasks/, ships them as PRs.",
-  "private": true,
-  "scripts": {
-    "test": "bash test/run.sh"
-  }
+  "version": "0.75.0",
+  "description": "Detroit: the Runner (outer loop) and the Factory (inner loop). Being rebuilt, see DESIGN.md.",
+  "private": true
 }

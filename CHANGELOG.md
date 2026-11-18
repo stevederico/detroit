@@ -1,5 +1,11 @@
 # Changelog
 
+0.74.0
+
+  Add design doc
+  Define Runner steps
+  Name Factory loop
+
 0.73.0
 
   Strip code prompt

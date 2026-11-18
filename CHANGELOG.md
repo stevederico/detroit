@@ -1,5 +1,11 @@
 # Changelog
 
+0.73.0
+
+  Strip code prompt
+  Archive old rules
+  Rely on Factory
+
 0.72.0
 
   Test secret gates

@@ -105,32 +105,6 @@ $TASK_PROMPT
 $([ -n "$PLAN_DOC" ] && printf '\n--- APPROVED PLAN (implement to this) ---\n%s\n--- END PLAN ---\n' "$PLAN_DOC")
 $([ -n "$LESSONS_SNIP" ] && printf '\n--- PAST LESSONS (avoid repeating these failures) ---\n%s\n--- END LESSONS ---\n' "$LESSONS_SNIP")
 
-Log format rules (follow exactly):
-- Stage headers: ━━━ STAGE_NAME ━━━ (e.g. ━━━ CODE ━━━, ━━━ TEST ━━━)
-- Progress: plain text, no markdown, no ** or ## or []
-- Results: plain text summary of what changed
-
-Factory rules (every bullet is mandatory — grouped by the 8 factory.md sections):
-$(factory_rules "$DETROIT/factory.md")
-
-Pipeline (execute in order):
-1. If NEW_REPO is true, scaffold the repo from scratch (README, package.json, etc.)
-2. Implement the task
-3. Run tests if they exist; if they fail, fix and re-run (max 3 attempts)
-4. For each new or modified exported function, ensure a doc comment matches the implementation
-5. If README describes features affected by your change, update it
-6. If AGENTS.md or CLAUDE.md describes behavior affected by your change, update it
-7. For each new error path, log the error with context
-8. For each new external API call, log timing and result
-9. Read package.json version and CHANGELOG.md before changing either
-10. Bump minor version in package.json (e.g. 1.7.0 → 1.8.0); bump again if that version already exists in CHANGELOG
-11. Add the new version to the top of CHANGELOG.md with a 3-word description (2-space indent, no dash)
-12. Stage modified files plus .github/workflows/ if it exists (never git add . or git add -A)
-13. Commit with a descriptive message (no AI attribution, no Co-Authored-By)
-14. If NEW_REPO is true, create a GitHub repo: gh repo create PROJECT --private --source=. --push
-15. Push the branch: git push origin $BRANCH
-16. If NEW_REPO is false, open a PR: gh pr create --base $BASE_BRANCH
-17. Print FACTORY_RESULT:SUCCESS or FACTORY_RESULT:FAILED
 PROMPT_EOF
 
   run_agent "$PROMPT_FILE" --verbose \

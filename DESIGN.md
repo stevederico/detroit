@@ -1,21 +1,30 @@
 # Detroit design
 
-Detroit is rebuilt from the ground up on my-factory. Old Detroit is intact on the `alpha-archive` branch. The removed Code-stage rules are in `archive/detroit-alpha-code-factory-archive.md`.
+Detroit is rebuilt from the ground up on Garden (`~/Projects/garden`, github.com/stevederico/garden, formerly my-factory). Old Detroit is intact on the `alpha-archive` branch. The removed Code-stage rules are in `archive/detroit-alpha-code-factory-archive.md`.
 
 ## Names
 
 - **Detroit**: the whole system.
 - **Runner**: the outer loop. Decides what runs.
-- **Factory**: the inner loop, my-factory. Decides what passes.
+- **Factory**: the inner loop, built by Garden. Decides what passes.
 
 ## Outline
 
 ```
-0 Shift
-1 Setup
-2 Plan
-3 Code (Factory: ToolGuard, CommitGuard, PushGuard, Verify)
-4 Done
+RUNNER
+  0 Shift (timer 01:00, loops tasks while budget lasts)
+  1 Setup (pick task, find repo, make branch)
+  2 Plan (optional, includes approve)
+  3 Code
+    FACTORY (Garden)
+      ToolGuard      checks every agent command
+      CommitGuard    checks every commit
+      PushGuard      checks every push, requires a version bump
+      Verify         runs the real app: pages, flows, state chart
+      garden pr      verify, push, open the PR with proof
+      garden review  a fresh robot tries to prove the PR wrong
+      automerge      optional, off by default
+  4 Done (PR created: file task in done/, else failed/)
 ```
 
 ## Steps
@@ -26,13 +35,13 @@ Detroit is rebuilt from the ground up on my-factory. Old Detroit is intact on th
 
 **2 Plan (optional).** The agent judges whether the task needs a plan. If it does, it writes `plan.md` and the user approves or rejects it before coding (terminal or web, 30-minute timeout, rejected aborts the task). If not, it skips to Code.
 
-**3 Code.** The agent implements the task. The prompt holds only the task, the approved plan and the last 15 lines of `lessons.md`. The Factory checks every step: ToolGuard before each command, CommitGuard at each commit, PushGuard at each push, Verify before done. A block tells the agent what to fix and it retries. The Factory also handles pushing and opening the PR.
+**3 Code.** The agent implements the task. The prompt holds only the task, the approved plan and the last 15 lines of `lessons.md`. Garden checks every step: ToolGuard before each command, CommitGuard at each commit, PushGuard at each push, Verify against the running app. A block tells the agent what to fix and it retries. The agent finishes with `garden pr`, which verifies, pushes and opens the pull request with proof. `garden review` then has a fresh robot try to prove the change wrong. Automerge is optional and off by default.
 
 **4 Done.** Success means the PR was created. The task file moves to `tasks/done/` and its GitHub issue closes. No PR means it moves to `tasks/failed/`, and failed tasks are never retried. The result is logged to `logs/`.
 
 ## Lessons
 
-Failures are written to `lessons.md` and the last 15 lines go into the next Code prompt. Each lesson should become a Factory check so the same failure is blocked rather than just remembered.
+Failures are written to `lessons.md` and the last 15 lines go into the next Code prompt. Each lesson should become a Garden check so the same failure is blocked rather than just remembered.
 
 ## Removed from the old pipeline
 
@@ -41,16 +50,21 @@ Failures are written to `lessons.md` and the last 15 lines go into the next Code
 | Route, Prepare | Merged into Setup |
 | Scaffold | Not needed |
 | Triage, Approve | Merged into Plan |
-| Gates, Fix | The Factory checks at commit and push time |
-| Ship | The Factory pushes and opens the PR |
+| Gates, Fix | Garden checks at commit and push time |
+| Ship | `garden pr` pushes and opens the PR |
 | CI | Removed. The lessons idea is kept |
-| Verify (old) | Now Factory Verify, inside Code |
-| Review | Lives in my-factory as optional adversarial review |
+| Verify (old) | Now Garden Verify, inside Code |
+| Review | Now `garden review` |
 | Update | Merged into Done |
+
+## Carried over from the old Code prompt
+
+Three rules moved into Garden: no empty catch (0.54.0), no `exec` or `execSync` (0.55.0), and a version bump on every code push (0.59.0, `GARDEN_BUMP_CHECK`). The plan template (Intent, Out of scope, Targets, Acceptance) was dropped; it is in `factory.md` on `alpha-archive`.
 
 ## Open questions
 
 - Task intake beyond `tasks/`: an API source (GitHub issues already work through `--issues`).
-- README and AGENTS.md updates, error logging and API timing logs: prose, or new Factory checks.
-- New-repo creation (`gh repo create --private`): Setup or the Factory.
+- README and AGENTS.md updates, error logging and API timing logs: prose, or new Garden checks.
+- New-repo creation (`gh repo create --private`): Setup or Garden.
 - What writes `lessons.md` now that CI is gone.
+- Whether Detroit turns on Garden's automerge, or leaves merging to a person.

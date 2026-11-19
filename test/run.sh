@@ -25,6 +25,7 @@ export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER
 export DETROIT_STATE="$work/state" DETROIT_TASKS="$work/tasks" DETROIT_PROJECTS="$work/projects"
 export DETROIT_LESSONS="$work/lessons.md" DETROIT_PAUSE=0 DETROIT_UNIT_DIR="$work/units"
 export GH_PR_URL_FILE="$work/pr-url" GH_SIGNED_IN=1 STUB_LOG="$work/stub.log" STUB_CODE_PROMPT="$work/code-prompt"
+export STUB_RUNNING="$work/running" STUB_MAX="$work/max"
 export DETROIT_AGENT_CMD="$work/bin/agent-stub"
 export PATH="$work/bin:$PATH"
 
@@ -45,6 +46,12 @@ case "$1" in
     ;;
   *)
     echo code >> "$STUB_LOG"
+    if [ -n "${STUB_SLEEP:-}" ]; then
+      mkdir -p "$STUB_RUNNING/$$"
+      sleep "$STUB_SLEEP"
+      ls "$STUB_RUNNING" | wc -l >> "$STUB_MAX"
+      rmdir "$STUB_RUNNING/$$"
+    fi
     printf '%s' "$1" > "$STUB_CODE_PROMPT"
     [ "${STUB_PR:-1}" = 1 ] && echo https://example.test/pr/1 > "$GH_PR_URL_FILE"
     ;;
@@ -58,8 +65,8 @@ EOF
 chmod +x "$work/bin/gh" "$work/bin/agent-stub" "$work/bin/systemctl"
 
 reset() {
-  rm -rf "$work/tasks" "$work/state" "$work/lessons.md" "$work/pr-url" "$work/stub.log" "$work/code-prompt"
-  unset STUB_PLAN STUB_PR
+  rm -rf "$work/running" "$work/max" "$work/tasks" "$work/state" "$work/lessons.md" "$work/pr-url" "$work/stub.log" "$work/code-prompt"
+  unset STUB_PLAN STUB_PR STUB_SLEEP
   export GH_SIGNED_IN=1
 }
 
@@ -149,6 +156,38 @@ reset
 "$bin" add "two" --repo app --name b > /dev/null
 "$bin" shift > /dev/null 2>&1
 [ -f "$work/tasks/done/a.md" ] && [ -f "$work/tasks/done/b.md" ] && ok 'shift runs every task until the queue is empty' || bad 'shift runs every task until the queue is empty'
+
+reset
+for n in 1 2 3 4; do "$bin" add "task $n" --repo app --name "t$n" > /dev/null; done
+STUB_SLEEP=1 "$bin" shift > /dev/null 2>&1
+check 'shift runs one task at a time by default' 1 "$(sort -n "$work/max" | tail -1)"
+
+reset
+for n in 1 2 3 4; do "$bin" add "task $n" --repo app --name "t$n" > /dev/null; done
+out="$(STUB_SLEEP=1 "$bin" shift --parallel 2 2>&1)"
+check 'shift --parallel 2 runs two tasks at once' 2 "$(sort -n "$work/max" | tail -1)"
+check 'shift --parallel finishes every task' 4 "$(ls "$work/tasks/done" | grep -c '^t')"
+has 'shift --parallel reports the totals' '4 ran, 0 failed' "$out"
+[ ! -e "$work/state/shift.lock" ] && ok 'shift --parallel releases its lock' || bad 'shift --parallel releases its lock'
+check 'shift --parallel leaves no task locks' '' "$(ls "$work/state/locks")"
+
+reset
+for n in 1 2 3; do "$bin" add "task $n" --repo app --name "t$n" > /dev/null; done
+out="$(STUB_PR=0 "$bin" shift --parallel 3 2>&1)"
+has 'shift --parallel counts failures' '3 ran, 3 failed' "$out"
+
+reset
+"$bin" shift --parallel 0 > /dev/null 2>&1
+check 'shift --parallel 0 is refused' 2 $?
+"$bin" shift --parallel many > /dev/null 2>&1
+check 'shift --parallel with a non-number is refused' 2 $?
+
+reset
+for i in 1 2; do
+  "$bin" add "same name" --repo app --name same > /dev/null
+  "$bin" run > /dev/null 2>&1
+  check "the same task name can run twice in a row (run $i)" 0 $?
+done
 
 reset
 "$bin" add "capped" --repo app --name capped > /dev/null

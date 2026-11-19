@@ -2,8 +2,8 @@
 
 Being rebuilt from the ground up. Read `DESIGN.md` first.
 
-- Runner: the outer loop (Shift, Setup, Plan, Code, Done). Decides what runs.
-- Factory: the inner loop, built by Garden (`~/Projects/garden`, formerly my-factory). Decides what passes. Put checks there, not here.
+- Detroit is the factory floor: it hands out tasks, runs many lines at once and keeps them running. The Runner is its outer loop (Shift, Setup, Plan, Code, Done).
+- Garden (`~/Projects/garden`, formerly my-factory) is an assembly line: the inner loop that decides what passes. Put checks there, not here.
 - Old Detroit: the `alpha-archive` branch.
 - `archive/` holds the old Detroit's research, scheduling files, todo list and Code-stage rules, kept for the rebuild. `todo.md` holds ideas for the new one.
 - `bin/detroit` is the whole Runner in one bash script. `test/run.sh` is its test suite; run it before every commit.

@@ -1,6 +1,6 @@
 # Detroit
 
-Task in, pull request out. Being rebuilt as a Runner (outer loop) around the Factory (inner loop, built by [Garden](https://github.com/stevederico/garden)). See `DESIGN.md`.
+Task in, pull request out. Detroit is the factory floor: it hands out tasks, runs many lines at once and keeps them running. Each line is a [Garden](https://github.com/stevederico/garden), which inspects the work on a repo. See `DESIGN.md`.
 
 The previous version lives on the `alpha-archive` branch.
 
@@ -9,7 +9,7 @@ The previous version lives on the `alpha-archive` branch.
 ```bash
 bin/detroit add "fix the login bug" --repo app
 bin/detroit run
-bin/detroit shift --hours 4
+bin/detroit shift --hours 4 --parallel 3
 bin/detroit install
 ```
 

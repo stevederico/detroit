@@ -16,7 +16,8 @@ usage() {
 usage: detroit <command> [args]
 
   run                 take the next task: setup, plan, code, done
-  shift [--hours N]   run tasks until the queue is empty or N hours pass (default 6)
+  shift [--hours N] [--parallel N]
+                      run tasks until the queue is empty or N hours pass (default 6), N at a time (default 1)
   add "text"          write a task into tasks/ (--repo <name|owner/name|path>, --name <slug>)
   status              the queue, what is running, the last results
   install             start a nightly shift at 01:00 (systemd user timer)
@@ -24,7 +25,7 @@ usage: detroit <command> [args]
   help                this text
 
 Settings (environment): DETROIT_AGENT (grok, claude or opencode), DETROIT_MODEL,
-DETROIT_PROJECTS, DETROIT_SHIFT_HOURS, DETROIT_CODE_TIMEOUT, DETROIT_APPROVE_PLAN=1
+DETROIT_PROJECTS, DETROIT_SHIFT_HOURS, DETROIT_PARALLEL, DETROIT_CODE_TIMEOUT, DETROIT_APPROVE_PLAN=1
 EOF
 }
 
@@ -130,7 +131,7 @@ setup() {
   git -C "$REPO_DIR" fetch -q origin 2> /dev/null
   start="$BASE"
   git -C "$REPO_DIR" rev-parse -q --verify "origin/$BASE" > /dev/null 2>&1 && start="origin/$BASE"
-  BRANCH="detroit/$(slug "$TASK_NAME")-$(date +%m%d%H%M)"
+  BRANCH="detroit/$(slug "$TASK_NAME")-$(date +%m%d%H%M%S)-$RANDOM"
   WORK="$PROJECTS/.detroit/$(basename "$REPO_DIR")-$(slug "$TASK_NAME")"
   [ -e "$WORK" ] && git -C "$REPO_DIR" worktree remove --force "$WORK" 2> /dev/null
   rm -rf "$WORK"
@@ -235,33 +236,58 @@ cmd_run() {
   esac
 }
 
-cmd_shift() {
-  local hours="${DETROIT_SHIFT_HOURS:-6}" pause="${DETROIT_PAUSE:-30}" end rc fails=0 ran=0
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --hours) hours="$2"; shift 2 ;;
-      *) usage >&2; return 2 ;;
-    esac
-  done
-  init
-  preflight || return 1
-  trap 'release; exit 130' INT TERM
-  trap release EXIT
-  SHIFT_LOCK="$STATE/shift.lock"
-  lock_take "$SHIFT_LOCK" || { log "another shift is running"; SHIFT_LOCK=""; return 0; }
-  end=$(($(date +%s) + hours * 3600))
-  log "shift: agent $AGENT, up to ${hours}h"
-  while [ "$(date +%s)" -lt "$end" ]; do
+shift_worker() {
+  local rc
+  while [ "$(date +%s)" -lt "$SHIFT_END" ]; do
     run_one
     rc=$?
     if [ "$rc" = 2 ]; then
       log "shift: queue empty"
-      break
+      return 0
     fi
-    ran=$((ran + 1))
-    [ "$rc" = 1 ] && fails=$((fails + 1))
-    sleep "$pause"
+    sleep "$SHIFT_PAUSE"
   done
+}
+
+cmd_shift() {
+  local hours="${DETROIT_SHIFT_HOURS:-6}" parallel="${DETROIT_PARALLEL:-1}" before ran fails i
+  SHIFT_PAUSE="${DETROIT_PAUSE:-30}"
+  PIDS=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --hours) hours="$2"; shift 2 ;;
+      --parallel) parallel="$2"; shift 2 ;;
+      *) usage >&2; return 2 ;;
+    esac
+  done
+  case "$parallel" in
+    "" | *[!0-9]* | 0) usage >&2; return 2 ;;
+  esac
+  init
+  preflight || return 1
+  trap 'kill "${PIDS[@]}" 2> /dev/null; release; exit 130' INT TERM
+  trap release EXIT
+  SHIFT_LOCK="$STATE/shift.lock"
+  lock_take "$SHIFT_LOCK" || { log "another shift is running"; SHIFT_LOCK=""; return 0; }
+  SHIFT_END=$(($(date +%s) + hours * 3600))
+  before="$(cat "$STATE/results.log" 2> /dev/null | wc -l)"
+  log "shift: agent $AGENT, up to ${hours}h, $parallel at a time"
+  if [ "$parallel" -le 1 ]; then
+    shift_worker
+  else
+    for i in $(seq "$parallel"); do
+      (
+        SHIFT_LOCK=""
+        trap 'release; exit 130' INT TERM
+        trap release EXIT
+        shift_worker
+      ) &
+      PIDS+=("$!")
+    done
+    wait "${PIDS[@]}"
+  fi
+  ran="$(tail -n +$((before + 1)) "$STATE/results.log" 2> /dev/null | wc -l)"
+  fails="$(tail -n +$((before + 1)) "$STATE/results.log" 2> /dev/null | grep -c ' failed ')"
   log "shift: finished, $ran ran, $fails failed"
 }
 

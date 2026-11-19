@@ -1,5 +1,11 @@
 # Changelog
 
+0.81.0
+
+  Add shift parallel
+  Unique branch names
+  Name factory floor
+
 0.80.0
 
   Move worktrees

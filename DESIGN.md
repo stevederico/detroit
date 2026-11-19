@@ -4,9 +4,9 @@ Detroit is rebuilt from the ground up on Garden (`~/Projects/garden`, github.com
 
 ## Names
 
-- **Detroit**: the whole system.
-- **Runner**: the outer loop. Decides what runs.
-- **Factory**: the inner loop, built by Garden. Decides what passes.
+- **Detroit**: the factory floor. It hands out the work, runs many lines at once and keeps them running.
+- **Garden**: an assembly line. Each one inspects the work on a repo as it is made.
+- Inside Detroit, the **Runner** is the outer loop (Shift, Setup, Plan, Code, Done) and the **Factory** is the inner loop that Garden provides.
 
 ## Outline
 
@@ -33,7 +33,8 @@ One script, `bin/detroit`:
 
 ```
 detroit run               one task: setup, plan, code, done
-detroit shift [--hours N] loop the queue until it is empty or N hours pass (default 6)
+detroit shift [--hours N] [--parallel N]
+                          loop the queue until it is empty or N hours pass (default 6), N lines at a time
 detroit add "text"        write a task into tasks/ (--repo, --name)
 detroit status            queue, running tasks, last results
 detroit install           nightly shift at 01:00 (systemd user timer)

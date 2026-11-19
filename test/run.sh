@@ -223,6 +223,15 @@ for n in 1 2 3; do "$bin" add "task $n" --repo app --name "t$n" > /dev/null; don
 out="$(STUB_PR=0 "$bin" shift --parallel 3 2>&1)"
 has 'shift --parallel counts failures' '3 ran, 3 failed' "$out"
 
+twice=0
+for round in $(seq 8); do
+  reset
+  for n in 1 2 3; do "$bin" add "task $n" --repo app --name "t$n" > /dev/null; done
+  out="$(STUB_PR=0 "$bin" shift --parallel 3 2>&1)"
+  case "$out" in *"3 ran, 3 failed"*) ;; *) twice=$((twice + 1)) ;; esac
+done
+check 'parallel workers never run a task that another worker already filed (8 rounds)' 0 "$twice"
+
 reset
 "$bin" shift --parallel 0 > /dev/null 2>&1
 check 'shift --parallel 0 is refused' 2 $?
@@ -290,6 +299,52 @@ reset
 env -u DETROIT_AGENT_CMD DETROIT_AGENT=nosuchagent "$bin" run > /dev/null 2>&1
 check 'an agent that is not installed stops the run before any task is touched' 1 $?
 [ -f "$work/tasks/bad.md" ] && ok 'the task stays queued when the agent is missing' || bad 'the task stays queued when the agent is missing'
+
+reset
+mkdir -p "$work/state/lines"
+now="$(date +%s)"
+printf 'task=demo\nrepo=app\nphase=code\nbranch=b\nattempt=2\nstarted=%s\nactivity=%s\npid=%s\n' "$((now - 120))" "$((now - 30))" "$$" > "$work/state/lines/demo"
+out="$("$bin" dash --once)"
+has 'dash shows a running line' 'demo' "$out"
+has 'dash shows the phase' 'code' "$out"
+has 'dash shows the line as running' 'running' "$out"
+has 'dash shows the idle time' '30s' "$out"
+out="$(DETROIT_STALL_SECS=10 "$bin" dash --once)"
+has 'dash flags a line with no activity as stalled' 'stalled' "$out"
+sleep 30 &
+dead=$!
+kill "$dead"
+wait "$dead" 2> /dev/null
+sed -i "s/^pid=.*/pid=$dead/" "$work/state/lines/demo"
+out="$("$bin" dash --once)"
+has 'dash flags a line whose process died as crashed' 'crashed' "$out"
+printf '2026-11-19 10:00:00 failed odd the "quoted" detail with a \\ backslash\n' > "$work/state/results.log"
+sed -i "s/^pid=.*/pid=$$/" "$work/state/lines/demo"
+json="$("$bin" status --json)"
+has 'status --json has the queue size' '"queue":' "$json"
+if command -v jq > /dev/null; then
+  check 'status --json is valid JSON even with quotes and backslashes in a result' true "$(printf '%s' "$json" | jq -e . > /dev/null 2>&1 && echo true || echo false)"
+  check 'status --json lists the running line' demo "$(printf '%s' "$json" | jq -r '.lines[0].task')"
+  check 'status --json gives the line state' running "$(printf '%s' "$json" | jq -r '.lines[0].state')"
+  check 'status --json gives the attempt as a number' 2 "$(printf '%s' "$json" | jq -r '.lines[0].attempt')"
+  check 'status --json keeps the quoted detail intact' 'the "quoted" detail with a \ backslash' "$(printf '%s' "$json" | jq -r '.results[0].detail')"
+fi
+
+reset
+port=$((18700 + RANDOM % 200))
+"$bin" dash --web --port "$port" --interval 1 > "$work/web.out" 2>&1 &
+web=$!
+for _ in $(seq 50); do
+  curl -fs "http://127.0.0.1:$port/status.json" > /dev/null 2>&1 && break
+  sleep 0.1
+done
+has 'dash --web prints its address' "http://127.0.0.1:$port" "$(cat "$work/web.out")"
+has 'dash --web serves the status as JSON' '"queue":' "$(curl -fs "http://127.0.0.1:$port/status.json" 2> /dev/null)"
+has 'dash --web serves the page' '<title>Detroit</title>' "$(curl -fs "http://127.0.0.1:$port/" 2> /dev/null)"
+kill "$web" 2> /dev/null
+wait "$web" 2> /dev/null
+sleep 0.5
+curl -fs "http://127.0.0.1:$port/status.json" > /dev/null 2>&1 && bad 'dash --web stops its server when it is stopped' || ok 'dash --web stops its server when it is stopped'
 
 reset
 "$bin" add "queued" --repo app --name q > /dev/null

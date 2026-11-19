@@ -10,6 +10,8 @@ The previous version lives on the `alpha-archive` branch.
 bin/detroit add "fix the login bug" --repo app
 bin/detroit run
 bin/detroit shift --hours 4 --parallel 3
+bin/detroit dash
+bin/detroit dash --web
 bin/detroit install
 ```
 

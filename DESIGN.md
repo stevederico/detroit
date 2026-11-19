@@ -36,12 +36,20 @@ detroit run               one task: setup, plan, code, done
 detroit shift [--hours N] [--parallel N]
                           loop the queue until it is empty or N hours pass (default 6), N lines at a time
 detroit add "text"        write a task into tasks/ (--repo, --name)
-detroit status            queue, running tasks, last results
+detroit status [--json]   queue, running tasks, last results
+detroit dash [--web]      live view of every line, in the terminal or at http://127.0.0.1:8787
 detroit install           nightly shift at 01:00 (systemd user timer)
 detroit uninstall         stop the nightly shift
 ```
 
-State (locks, logs, plans, worktrees, results) lives in `~/.local/state/detroit`. The agent is `DETROIT_AGENT` (grok, claude or opencode). Shift stops on an hours cap only; the usage-window budget is not built yet.
+State (locks, line records, logs, plans, results) lives in `~/.local/state/detroit`. Worktrees live in `PROJECTS/.detroit` so `GARDEN_REPOS` globs match them. The agent is `DETROIT_AGENT` (grok, claude or opencode). Shift stops on an hours cap only; the usage-window budget is not built yet.
+
+## Keeping lines running
+
+- **Line record:** every running task writes `task, repo, phase, attempt, started, activity, pid` to `lines/<task>` and removes it when it ends.
+- **Stall watchdog:** the agent runs in its own session. With no log growth and no file change in its worktree for `DETROIT_STALL_SECS` (900), Detroit kills the whole process group and restarts the code step up to `DETROIT_RETRIES` (1) times, telling the agent to check `git status` and continue. A task that stalls on every attempt fails and leaves a lesson.
+- **Dashboard states:** `running`, `stalled` (idle past the limit) and `crashed` (the line's process is gone).
+- **Dashboard:** `detroit dash` redraws a table in the terminal; `detroit dash --web` serves `web/dashboard.html` on localhost, fed by `detroit status --json` every 2 seconds.
 
 ## Steps
 

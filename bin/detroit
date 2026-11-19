@@ -20,13 +20,15 @@ usage: detroit <command> [args]
   shift [--hours N] [--parallel N]
                       run tasks until the queue is empty or N hours pass (default 6), N at a time (default 1)
   add "text"          write a task into tasks/ (--repo <name|owner/name|path>, --name <slug>)
-  status              the queue, what is running, the last results
+  status [--json]     the queue, what is running, the last results
+  dash [--web]        a live view of every line (--web serves it on 127.0.0.1:8787, --port N, --interval N, --once)
   install             start a nightly shift at 01:00 (systemd user timer)
   uninstall           stop the nightly shift
   help                this text
 
 Settings (environment): DETROIT_AGENT (grok, claude or opencode), DETROIT_MODEL,
-DETROIT_PROJECTS, DETROIT_SHIFT_HOURS, DETROIT_PARALLEL, DETROIT_CODE_TIMEOUT, DETROIT_APPROVE_PLAN=1
+DETROIT_PROJECTS, DETROIT_SHIFT_HOURS, DETROIT_PARALLEL, DETROIT_CODE_TIMEOUT, DETROIT_STALL_SECS, DETROIT_RETRIES,
+DETROIT_APPROVE_PLAN=1
 EOF
 }
 
@@ -79,10 +81,13 @@ pick_task() {
   while IFS= read -r f; do
     name="$(basename "$f" .md)"
     if lock_take "$STATE/locks/$name"; then
-      TASK_FILE="$f"
-      TASK_NAME="$name"
-      TASK_LOCK="$STATE/locks/$name"
-      return 0
+      if [ -f "$f" ]; then
+        TASK_FILE="$f"
+        TASK_NAME="$name"
+        TASK_LOCK="$STATE/locks/$name"
+        return 0
+      fi
+      rm -rf "$STATE/locks/$name"
     fi
   done < <(find "$TASKS" -maxdepth 1 -name '*.md' -type f | sort)
   return 1
@@ -400,11 +405,98 @@ cmd_add() {
   printf '%s\n' "$file"
 }
 
+esc() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+
+line_field() { sed -n "s/^$2=//p" "$1" | head -1; }
+
+queue_count() { find "$TASKS" -maxdepth 1 -name '*.md' -type f | wc -l | tr -d ' '; }
+
+shift_alive() { [ -f "$STATE/shift.lock/pid" ] && kill -0 "$(cat "$STATE/shift.lock/pid")" 2> /dev/null; }
+
+fmt_secs() {
+  local s="$1"
+  if [ "$s" -ge 3600 ]; then
+    printf '%dh%02dm' $((s / 3600)) $((s % 3600 / 60))
+  elif [ "$s" -ge 60 ]; then
+    printf '%dm%02ds' $((s / 60)) $((s % 60))
+  else
+    printf '%ds' "$s"
+  fi
+}
+
+lines_rows() {
+  local f now pid started activity idle state stall="${DETROIT_STALL_SECS:-900}"
+  now="$(date +%s)"
+  for f in "$LINES"/*; do
+    [ -f "$f" ] || continue
+    case "$f" in *.tmp) continue ;; esac
+    pid="$(line_field "$f" pid)"
+    started="$(line_field "$f" started)"
+    activity="$(line_field "$f" activity)"
+    [ -n "$activity" ] || activity="$started"
+    idle=$((now - ${activity:-$now}))
+    state=running
+    if ! kill -0 "$pid" 2> /dev/null; then
+      state=crashed
+    elif [ "$idle" -ge "$stall" ]; then
+      state=stalled
+    fi
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(line_field "$f" task)" "$(line_field "$f" repo)" "$(line_field "$f" phase)" "$(line_field "$f" attempt)" "$((now - ${started:-$now}))" "$idle" "$state"
+  done
+}
+
+render_text() {
+  local rows total n=0 waiting task repo ph att el idle st
+  rows="$(lines_rows)"
+  total="$(queue_count)"
+  [ -n "$rows" ] && n="$(printf '%s\n' "$rows" | wc -l | tr -d ' ')"
+  waiting=$((total - n))
+  [ "$waiting" -lt 0 ] && waiting=0
+  printf 'DETROIT  %s   shift: %s   running: %s   waiting: %s\n\n' "$(date +%T)" "$(shift_alive && echo running || echo idle)" "$n" "$waiting"
+  printf '%-24s %-16s %-8s %-4s %-9s %-9s %s\n' TASK REPO PHASE TRY ELAPSED IDLE STATE
+  if [ -n "$rows" ]; then
+    while IFS=$'\t' read -r task repo ph att el idle st; do
+      printf '%-24s %-16s %-8s %-4s %-9s %-9s %s\n' "${task:0:24}" "${repo:0:16}" "$ph" "${att:-1}" "$(fmt_secs "$el")" "$(fmt_secs "$idle")" "$st"
+    done <<< "$rows"
+  else
+    printf '(no lines running)\n'
+  fi
+  printf '\nrecent:\n'
+  tail -n 5 "$STATE/results.log" 2> /dev/null | sed 's/^/  /'
+}
+
+render_json() {
+  local rows total n=0 first=1 task repo ph att el idle st d t status name detail
+  rows="$(lines_rows)"
+  total="$(queue_count)"
+  [ -n "$rows" ] && n="$(printf '%s\n' "$rows" | wc -l | tr -d ' ')"
+  printf '{"time":%s,"queue":%s,"running":%s,"shift":%s,"stall_secs":%s,"lines":[' "$(date +%s)" "$total" "$n" "$(shift_alive && echo true || echo false)" "${DETROIT_STALL_SECS:-900}"
+  if [ -n "$rows" ]; then
+    while IFS=$'\t' read -r task repo ph att el idle st; do
+      [ "$first" = 1 ] || printf ','
+      first=0
+      printf '{"task":"%s","repo":"%s","phase":"%s","attempt":%s,"elapsed":%s,"idle":%s,"state":"%s"}' "$(esc "$task")" "$(esc "$repo")" "$(esc "$ph")" "${att:-1}" "${el:-0}" "${idle:-0}" "$(esc "$st")"
+    done <<< "$rows"
+  fi
+  printf '],"results":['
+  first=1
+  while read -r d t status name detail; do
+    [ -n "$d" ] || continue
+    [ "$first" = 1 ] || printf ','
+    first=0
+    printf '{"time":"%s %s","status":"%s","task":"%s","detail":"%s"}' "$d" "$t" "$(esc "$status")" "$(esc "$name")" "$(esc "$detail")"
+  done < <(tail -n 10 "$STATE/results.log" 2> /dev/null)
+  printf ']}\n'
+}
+
 cmd_status() {
-  local queued running d pid
+  local running d pid
   init
-  queued="$(find "$TASKS" -maxdepth 1 -name '*.md' -type f | wc -l | tr -d ' ')"
-  printf 'queue: %s task(s) in %s\n' "$queued" "$TASKS"
+  if [ "${1:-}" = "--json" ]; then
+    render_json
+    return 0
+  fi
+  printf 'queue: %s task(s) in %s\n' "$(queue_count)" "$TASKS"
   running=""
   for d in "$STATE"/locks/*/; do
     [ -f "${d}pid" ] || continue
@@ -412,7 +504,7 @@ cmd_status() {
     kill -0 "$pid" 2> /dev/null && running="$running $(basename "$d")"
   done
   printf 'running:%s\n' "${running:- none}"
-  if [ -f "$STATE/shift.lock/pid" ] && kill -0 "$(cat "$STATE/shift.lock/pid")" 2> /dev/null; then
+  if shift_alive; then
     printf 'shift: running\n'
   else
     printf 'shift: not running\n'
@@ -420,6 +512,52 @@ cmd_status() {
   printf 'last results:\n'
   tail -n 5 "$STATE/results.log" 2> /dev/null | sed 's/^/  /'
   return 0
+}
+
+cmd_dash() {
+  local once=0 web=0 port=8787 interval=2 dir writer server
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --once) once=1; shift ;;
+      --web) web=1; shift ;;
+      --port) port="$2"; shift 2 ;;
+      --interval) interval="$2"; shift 2 ;;
+      *) usage >&2; return 2 ;;
+    esac
+  done
+  init
+  if [ "$web" = 1 ]; then
+    command -v python3 > /dev/null || { log "python3 is needed to serve the web dashboard."; return 1; }
+    dir="$STATE/web"
+    mkdir -p "$dir"
+    cp "$DETROIT_HOME/web/dashboard.html" "$dir/index.html"
+    render_json > "$dir/status.json"
+    (
+      while :; do
+        render_json > "$dir/status.json.tmp" && mv "$dir/status.json.tmp" "$dir/status.json"
+        sleep "$interval"
+      done
+    ) &
+    writer=$!
+    python3 -m http.server "$port" --bind 127.0.0.1 --directory "$dir" > /dev/null 2>&1 &
+    server=$!
+    trap 'kill "$writer" "$server" 2> /dev/null' EXIT
+    trap 'exit 0' INT TERM
+    printf 'dashboard: http://127.0.0.1:%s\n' "$port"
+    wait "$server"
+    return 0
+  fi
+  if [ "$once" = 1 ]; then
+    render_text
+    return 0
+  fi
+  trap 'printf "\033[?25h"; exit 0' INT TERM
+  printf '\033[?25l'
+  while :; do
+    printf '\033[H\033[2J'
+    render_text
+    sleep "$interval"
+  done
 }
 
 cmd_install() {
@@ -465,6 +603,7 @@ case "$cmd" in
   shift) cmd_shift "$@" ;;
   add) cmd_add "$@" ;;
   status) cmd_status "$@" ;;
+  dash) cmd_dash "$@" ;;
   install) cmd_install "$@" ;;
   uninstall) cmd_uninstall "$@" ;;
   help | -h | --help) usage ;;

@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Detroit</title>
+<style>
+  :root {
+    --bg: #f6f6f4;
+    --panel: #ffffff;
+    --ink: #1c1d1f;
+    --muted: #6b6f76;
+    --line: #e3e3df;
+    --ok: #1a7f4b;
+    --warn: #a15c00;
+    --bad: #b3261e;
+    --ok-bg: #e4f4ea;
+    --warn-bg: #fdf0d8;
+    --bad-bg: #fbe6e4;
+    --idle-bg: #ececea;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141516;
+      --panel: #1c1d1f;
+      --ink: #ececec;
+      --muted: #9a9ea6;
+      --line: #2c2d30;
+      --ok: #5fd08e;
+      --warn: #e6b45a;
+      --bad: #f19a93;
+      --ok-bg: #16301f;
+      --warn-bg: #33270f;
+      --bad-bg: #3a1a18;
+      --idle-bg: #26272a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px 20px; margin-bottom: 20px; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: 0.01em; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 28px 0 8px; font-weight: 600; }
+  .stats { display: flex; flex-wrap: wrap; gap: 8px; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 4px 12px; font-variant-numeric: tabular-nums; }
+  .stat b { font-weight: 600; }
+  .stat span { color: var(--muted); margin-right: 6px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { font-size: 12px; font-weight: 600; color: var(--muted); }
+  tr:last-child td { border-bottom: 0; }
+  .chip { display: inline-block; padding: 1px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--idle-bg); color: var(--muted); }
+  .chip.running, .chip.done { background: var(--ok-bg); color: var(--ok); }
+  .chip.stalled { background: var(--warn-bg); color: var(--warn); }
+  .chip.crashed, .chip.failed { background: var(--bad-bg); color: var(--bad); }
+  .empty { padding: 20px 14px; color: var(--muted); }
+  .when { color: var(--muted); }
+  #offline { background: var(--bad-bg); color: var(--bad); border-radius: 8px; padding: 8px 14px; margin-bottom: 16px; font-weight: 600; }
+  #offline[hidden] { display: none; }
+  footer { margin-top: 28px; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Detroit</h1>
+    <div class="stats">
+      <div class="stat"><span>shift</span><b id="shift">-</b></div>
+      <div class="stat"><span>running</span><b id="running">-</b></div>
+      <div class="stat"><span>waiting</span><b id="waiting">-</b></div>
+    </div>
+  </header>
+  <div id="offline" hidden>Cannot reach Detroit. Is detroit dash --web still running?</div>
+
+  <h2>Lines</h2>
+  <div class="panel">
+    <table>
+      <thead><tr><th>Task</th><th>Repo</th><th>Phase</th><th>Try</th><th>Elapsed</th><th>Idle</th><th>State</th></tr></thead>
+      <tbody id="lines"></tbody>
+    </table>
+    <div id="no-lines" class="empty" hidden>No lines running.</div>
+  </div>
+
+  <h2>Recent results</h2>
+  <div class="panel">
+    <table>
+      <thead><tr><th>When</th><th>Result</th><th>Task</th><th>Detail</th></tr></thead>
+      <tbody id="results"></tbody>
+    </table>
+    <div id="no-results" class="empty" hidden>Nothing has finished yet.</div>
+  </div>
+
+  <footer id="updated"></footer>
+</main>
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  function fmt(total) {
+    const s = Math.max(0, Math.floor(total));
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const r = s % 60;
+    if (h) return h + "h " + String(m).padStart(2, "0") + "m";
+    if (m) return m + "m " + String(r).padStart(2, "0") + "s";
+    return r + "s";
+  }
+
+  function cell(text, cls) {
+    const td = document.createElement("td");
+    td.textContent = text;
+    if (cls) td.className = cls;
+    return td;
+  }
+
+  function chipCell(label, state) {
+    const td = document.createElement("td");
+    const chip = document.createElement("span");
+    chip.className = "chip " + state;
+    chip.textContent = label;
+    td.appendChild(chip);
+    return td;
+  }
+
+  function row(cells) {
+    const tr = document.createElement("tr");
+    cells.forEach((c) => tr.appendChild(c));
+    return tr;
+  }
+
+  function render(data) {
+    const waiting = Math.max(0, data.queue - data.lines.length);
+    $("shift").textContent = data.shift ? "running" : "idle";
+    $("running").textContent = data.lines.length;
+    $("waiting").textContent = waiting;
+
+    const lines = $("lines");
+    lines.replaceChildren(...data.lines.map((l) => row([
+      cell(l.task), cell(l.repo), cell(l.phase), cell(l.attempt),
+      cell(fmt(l.elapsed)), cell(fmt(l.idle), "when"), chipCell(l.state, l.state)
+    ])));
+    $("no-lines").hidden = data.lines.length > 0;
+
+    const results = $("results");
+    results.replaceChildren(...data.results.slice().reverse().map((r) => row([
+      cell(r.time, "when"), chipCell(r.status, r.status), cell(r.task), cell(r.detail)
+    ])));
+    $("no-results").hidden = data.results.length > 0;
+
+    $("updated").textContent = "Updated " + new Date(data.time * 1000).toLocaleTimeString();
+  }
+
+  async function tick() {
+    try {
+      const res = await fetch("status.json?" + Date.now(), { cache: "no-store" });
+      if (!res.ok) throw new Error(String(res.status));
+      render(await res.json());
+      $("offline").hidden = true;
+    } catch (err) {
+      $("offline").hidden = false;
+    }
+  }
+
+  tick();
+  setInterval(tick, 2000);
+</script>
+</body>
+</html>

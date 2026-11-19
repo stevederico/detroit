@@ -1,5 +1,12 @@
 # Changelog
 
+0.83.0
+
+  Add terminal dashboard
+  Add web dashboard
+  Add status json
+  Fix double pick
+
 0.82.0
 
   Restart stalled agents

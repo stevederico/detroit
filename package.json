@@ -1,6 +1,9 @@
 {
   "name": "detroit",
-  "version": "0.77.0",
+  "version": "0.78.0",
   "description": "Detroit: the Runner (outer loop) and the Factory (inner loop). Being rebuilt, see DESIGN.md.",
-  "private": true
+  "private": true,
+  "scripts": {
+    "test": "bash test/run.sh"
+  }
 }

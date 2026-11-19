@@ -1,0 +1,367 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+DETROIT_HOME="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+TASKS="${DETROIT_TASKS:-$DETROIT_HOME/tasks}"
+STATE="${DETROIT_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/detroit}"
+PROJECTS="${DETROIT_PROJECTS:-$HOME/Projects}"
+LESSONS="${DETROIT_LESSONS:-$DETROIT_HOME/lessons.md}"
+AGENT="${DETROIT_AGENT:-grok}"
+OPENCODE_MODEL="studio/mlx-community/Qwen3-Coder-Next-4bit"
+TASK_LOCK=""
+SHIFT_LOCK=""
+
+usage() {
+  cat << 'EOF'
+usage: detroit <command> [args]
+
+  run                 take the next task: setup, plan, code, done
+  shift [--hours N]   run tasks until the queue is empty or N hours pass (default 6)
+  add "text"          write a task into tasks/ (--repo <name|owner/name|path>, --name <slug>)
+  status              the queue, what is running, the last results
+  install             start a nightly shift at 01:00 (systemd user timer)
+  uninstall           stop the nightly shift
+  help                this text
+
+Settings (environment): DETROIT_AGENT (grok, claude or opencode), DETROIT_MODEL,
+DETROIT_PROJECTS, DETROIT_SHIFT_HOURS, DETROIT_CODE_TIMEOUT, DETROIT_APPROVE_PLAN=1
+EOF
+}
+
+log() { printf '%s %s\n' "$(date '+%F %T')" "$*" | tee -a "$STATE/detroit.log"; }
+
+init() { mkdir -p "$STATE/locks" "$STATE/logs" "$STATE/plans" "$STATE/work" "$TASKS/done" "$TASKS/failed"; }
+
+slug() { printf '%s' "$1" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9\n' '-' | sed 's/--*/-/g;s/^-//;s/-$//' | cut -c1-40; }
+
+front() {
+  awk -v k="$2" 'NR == 1 && $0 != "---" { exit } NR > 1 && $0 == "---" { exit }
+    NR > 1 { i = index($0, ":"); if (i && substr($0, 1, i - 1) == k) { v = substr($0, i + 1); sub(/^ +/, "", v); print v; exit } }' "$1"
+}
+
+body() { awk 'NR == 1 && $0 == "---" { f = 1; next } f && $0 == "---" { f = 0; next } !f' "$1"; }
+
+lock_take() {
+  local dir="$1" pid
+  if ! mkdir "$dir" 2> /dev/null; then
+    pid="$(cat "$dir/pid" 2> /dev/null)"
+    if [ -n "$pid" ] && kill -0 "$pid" 2> /dev/null; then return 1; fi
+    rm -rf "$dir"
+    mkdir "$dir" 2> /dev/null || return 1
+  fi
+  printf '%s\n' "$$" > "$dir/pid"
+}
+
+release() {
+  [ -n "$TASK_LOCK" ] && rm -rf "$TASK_LOCK"
+  [ -n "$SHIFT_LOCK" ] && rm -rf "$SHIFT_LOCK"
+  TASK_LOCK=""
+  SHIFT_LOCK=""
+}
+
+pick_task() {
+  local f name
+  while IFS= read -r f; do
+    name="$(basename "$f" .md)"
+    if lock_take "$STATE/locks/$name"; then
+      TASK_FILE="$f"
+      TASK_NAME="$name"
+      TASK_LOCK="$STATE/locks/$name"
+      return 0
+    fi
+  done < <(find "$TASKS" -maxdepth 1 -name '*.md' -type f | sort)
+  return 1
+}
+
+preflight() {
+  command -v gh > /dev/null || { log "gh is not installed. Install it and run gh auth login."; return 1; }
+  gh auth status > /dev/null 2>&1 || { log "gh is signed out. Run gh auth login."; return 1; }
+  [ -n "${DETROIT_AGENT_CMD:-}" ] || command -v "$AGENT" > /dev/null || { log "agent '$AGENT' is not installed. Set DETROIT_AGENT to grok, claude or opencode."; return 1; }
+}
+
+agent_argv() {
+  local prompt="$1" model="${DETROIT_MODEL:-}"
+  ARGV=()
+  if [ -n "${DETROIT_AGENT_CMD:-}" ]; then
+    ARGV=("$DETROIT_AGENT_CMD" "$prompt")
+    return 0
+  fi
+  case "$AGENT" in
+    claude)
+      ARGV=(claude -p "$prompt" --dangerously-skip-permissions)
+      [ -n "$model" ] && ARGV+=(--model "$model")
+      ;;
+    grok)
+      ARGV=(grok --no-auto-update -p "$prompt")
+      [ -n "$model" ] && ARGV+=(--model "$model")
+      ;;
+    opencode) ARGV=(opencode run --auto -m "${model:-$OPENCODE_MODEL}" -- "$prompt") ;;
+    *) return 1 ;;
+  esac
+}
+
+run_agent() {
+  local secs="$1" prompt="$2"
+  agent_argv "$prompt" || { log "unknown agent '$AGENT'. Set DETROIT_AGENT to grok, claude or opencode."; return 1; }
+  (cd "$WORK" && timeout -k 30 "$secs" "${ARGV[@]}" < /dev/null) 2>&1 | tee -a "$TASK_LOG"
+  return "${PIPESTATUS[0]}"
+}
+
+setup() {
+  local ref base start
+  ref="$(front "$TASK_FILE" repo)"
+  TASK_BODY="$(body "$TASK_FILE")"
+  if [ -z "$ref" ]; then
+    local name
+    name="$(slug "$TASK_NAME")"
+    REPO_DIR="$PROJECTS/$name"
+    if [ ! -d "$REPO_DIR/.git" ]; then
+      mkdir -p "$REPO_DIR" && git -C "$REPO_DIR" init -q -b main && git -C "$REPO_DIR" commit -q --allow-empty -m "Initial commit" || return 1
+      (cd "$REPO_DIR" && gh repo create "$name" --private --source=. --push > /dev/null) || return 1
+    fi
+  else
+    case "$ref" in
+      /* | "~"*) REPO_DIR="${ref/#\~/$HOME}" ;;
+      */*)
+        REPO_DIR="$PROJECTS/${ref##*/}"
+        [ -d "$REPO_DIR/.git" ] || gh repo clone "$ref" "$REPO_DIR" > /dev/null || return 1
+        ;;
+      *) REPO_DIR="$PROJECTS/$ref" ;;
+    esac
+    [ -d "$REPO_DIR/.git" ] || { log "no repo at $REPO_DIR"; return 1; }
+  fi
+  base="$(git -C "$REPO_DIR" symbolic-ref --short refs/remotes/origin/HEAD 2> /dev/null)"
+  BASE="${base#origin/}"
+  [ -n "$BASE" ] || BASE="$(git -C "$REPO_DIR" branch --show-current)"
+  git -C "$REPO_DIR" fetch -q origin 2> /dev/null
+  start="$BASE"
+  git -C "$REPO_DIR" rev-parse -q --verify "origin/$BASE" > /dev/null 2>&1 && start="origin/$BASE"
+  BRANCH="detroit/$(slug "$TASK_NAME")-$(date +%m%d%H%M)"
+  WORK="$STATE/work/$(basename "$REPO_DIR")-$(slug "$TASK_NAME")"
+  [ -e "$WORK" ] && git -C "$REPO_DIR" worktree remove --force "$WORK" 2> /dev/null
+  rm -rf "$WORK"
+  git -C "$REPO_DIR" worktree add -q -b "$BRANCH" "$WORK" "$start" || return 1
+  export DETROIT_WORK="$WORK" DETROIT_BRANCH="$BRANCH"
+}
+
+plan() {
+  local answer
+  PLAN_FILE="$STATE/plans/$TASK_NAME.md"
+  rm -f "$PLAN_FILE"
+  export DETROIT_PLAN="$PLAN_FILE"
+  run_agent "${DETROIT_PLAN_TIMEOUT:-300}" "Decide whether this task needs a written plan: yes for a new surface, more than one subsystem, a schema or behavior change or a new dependency; no for a small, clear change. If yes, write the plan to $PLAN_FILE. If no, write nothing. Do not change the repo or run git.
+
+--- TASK ---
+$TASK_BODY
+--- END TASK ---" > /dev/null
+  [ -s "$PLAN_FILE" ] || return 0
+  log "plan written: $PLAN_FILE"
+  [ "${DETROIT_APPROVE_PLAN:-0}" = 1 ] || return 0
+  printf 'Approve plan %s and continue? [y/N] ' "$PLAN_FILE" > /dev/tty 2> /dev/null
+  read -r answer < /dev/tty 2> /dev/null || answer=y
+  case "$answer" in
+    y | Y | yes) return 0 ;;
+    *) log "plan rejected"; return 1 ;;
+  esac
+}
+
+code() {
+  local lessons="" plan=""
+  [ -f "$LESSONS" ] && lessons="$(grep '^- ' "$LESSONS" | tail -15)"
+  [ -s "$PLAN_FILE" ] && plan="$(cat "$PLAN_FILE")"
+  run_agent "${DETROIT_CODE_TIMEOUT:-3600}" "$(
+    cat << EOF
+You are running under Detroit. Complete this task in the repo at $WORK (branch $BRANCH, base $BASE).
+
+--- TASK ---
+$TASK_BODY
+--- END TASK ---
+${plan:+
+--- APPROVED PLAN (implement to this) ---
+$plan
+--- END PLAN ---
+}${lessons:+
+--- PAST LESSONS (avoid repeating these) ---
+$lessons
+--- END LESSONS ---
+}
+Garden checks every command, commit and push. Fix what it reports. When the work is committed, open the pull request with garden pr (see garden help).
+EOF
+  )" > /dev/null
+}
+
+fail() {
+  log "failed: $TASK_NAME: $1"
+  printf -- '- %s: %s\n' "$TASK_NAME" "$1" >> "$LESSONS"
+  mv "$TASK_FILE" "$TASKS/failed/"
+  printf '%s failed %s %s\n' "$(date '+%F %T')" "$TASK_NAME" "$1" >> "$STATE/results.log"
+  release
+  return 1
+}
+
+finish() {
+  local url issue repo num
+  url="$(cd "$WORK" && gh pr list --head "$BRANCH" --state all --json url --jq '.[0].url' 2> /dev/null)"
+  [ -n "$url" ] || { fail "the agent finished but no pull request exists for $BRANCH"; return 1; }
+  issue="$(front "$TASK_FILE" issue)"
+  if [ -n "$issue" ]; then
+    repo="${issue%%#*}"
+    num="${issue##*#}"
+    gh issue comment "$num" --repo "$repo" --body "Pull request: $url" > /dev/null 2>&1
+    gh issue close "$num" --repo "$repo" > /dev/null 2>&1
+  fi
+  mv "$TASK_FILE" "$TASKS/done/"
+  git -C "$REPO_DIR" worktree remove --force "$WORK" 2> /dev/null
+  printf '%s done %s %s\n' "$(date '+%F %T')" "$TASK_NAME" "$url" >> "$STATE/results.log"
+  log "done: $TASK_NAME $url"
+  release
+}
+
+run_one() {
+  pick_task || return 2
+  TASK_LOG="$STATE/logs/$(date +%Y%m%d-%H%M%S)-$TASK_NAME.log"
+  log "task: $TASK_NAME"
+  setup || { fail "could not set up the repo and branch"; return 1; }
+  plan || { fail "the plan was rejected or the planning step failed"; return 1; }
+  code || { fail "the agent run failed or timed out"; return 1; }
+  finish
+}
+
+cmd_run() {
+  init
+  preflight || return 1
+  trap 'release; exit 130' INT TERM
+  trap release EXIT
+  run_one
+  case $? in
+    0) return 0 ;;
+    2) log "no tasks in $TASKS"; return 2 ;;
+    *) return 1 ;;
+  esac
+}
+
+cmd_shift() {
+  local hours="${DETROIT_SHIFT_HOURS:-6}" pause="${DETROIT_PAUSE:-30}" end rc fails=0 ran=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --hours) hours="$2"; shift 2 ;;
+      *) usage >&2; return 2 ;;
+    esac
+  done
+  init
+  preflight || return 1
+  trap 'release; exit 130' INT TERM
+  trap release EXIT
+  SHIFT_LOCK="$STATE/shift.lock"
+  lock_take "$SHIFT_LOCK" || { log "another shift is running"; SHIFT_LOCK=""; return 0; }
+  end=$(($(date +%s) + hours * 3600))
+  log "shift: agent $AGENT, up to ${hours}h"
+  while [ "$(date +%s)" -lt "$end" ]; do
+    run_one
+    rc=$?
+    if [ "$rc" = 2 ]; then
+      log "shift: queue empty"
+      break
+    fi
+    ran=$((ran + 1))
+    [ "$rc" = 1 ] && fails=$((fails + 1))
+    sleep "$pause"
+  done
+  log "shift: finished, $ran ran, $fails failed"
+}
+
+cmd_add() {
+  local repo="" name="" text="" base file n=2
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --repo) repo="$2"; shift 2 ;;
+      --name) name="$2"; shift 2 ;;
+      *) text="${text:+$text }$1"; shift ;;
+    esac
+  done
+  [ -n "$text" ] || { usage >&2; return 2; }
+  init
+  [ -n "$name" ] || name="$(printf '%s' "$text" | awk '{ print $1, $2, $3, $4, $5, $6 }')"
+  base="$(slug "$name")"
+  file="$TASKS/$base.md"
+  while [ -e "$file" ]; do
+    file="$TASKS/$base-$n.md"
+    n=$((n + 1))
+  done
+  {
+    [ -n "$repo" ] && printf -- '---\nrepo: %s\n---\n\n' "$repo"
+    printf '%s\n' "$text"
+  } > "$file"
+  printf '%s\n' "$file"
+}
+
+cmd_status() {
+  local queued running d pid
+  init
+  queued="$(find "$TASKS" -maxdepth 1 -name '*.md' -type f | wc -l | tr -d ' ')"
+  printf 'queue: %s task(s) in %s\n' "$queued" "$TASKS"
+  running=""
+  for d in "$STATE"/locks/*/; do
+    [ -f "${d}pid" ] || continue
+    pid="$(cat "${d}pid")"
+    kill -0 "$pid" 2> /dev/null && running="$running $(basename "$d")"
+  done
+  printf 'running:%s\n' "${running:- none}"
+  if [ -f "$STATE/shift.lock/pid" ] && kill -0 "$(cat "$STATE/shift.lock/pid")" 2> /dev/null; then
+    printf 'shift: running\n'
+  else
+    printf 'shift: not running\n'
+  fi
+  printf 'last results:\n'
+  tail -n 5 "$STATE/results.log" 2> /dev/null | sed 's/^/  /'
+  return 0
+}
+
+cmd_install() {
+  local dir="${DETROIT_UNIT_DIR:-$HOME/.config/systemd/user}" bin="$DETROIT_HOME/bin/detroit"
+  mkdir -p "$dir" "$STATE"
+  cat > "$dir/detroit-nightly.service" << EOF
+[Unit]
+Description=Detroit nightly shift
+
+[Service]
+Type=oneshot
+Environment=PATH=$PATH
+ExecStart=$bin shift
+StandardOutput=append:$STATE/nightly.log
+StandardError=append:$STATE/nightly.log
+TimeoutStartSec=8h
+TimeoutStopSec=30s
+EOF
+  cat > "$dir/detroit-nightly.timer" << 'EOF'
+[Unit]
+Description=Detroit nightly shift at 01:00
+
+[Timer]
+OnCalendar=*-*-* 01:00:00
+
+[Install]
+WantedBy=timers.target
+EOF
+  systemctl --user daemon-reload && systemctl --user enable --now detroit-nightly.timer
+}
+
+cmd_uninstall() {
+  local dir="${DETROIT_UNIT_DIR:-$HOME/.config/systemd/user}"
+  systemctl --user disable --now detroit-nightly.timer 2> /dev/null
+  rm -f "$dir/detroit-nightly.service" "$dir/detroit-nightly.timer"
+  systemctl --user daemon-reload
+}
+
+cmd="${1:-help}"
+[ $# -gt 0 ] && shift
+case "$cmd" in
+  run) cmd_run "$@" ;;
+  shift) cmd_shift "$@" ;;
+  add) cmd_add "$@" ;;
+  status) cmd_status "$@" ;;
+  install) cmd_install "$@" ;;
+  uninstall) cmd_uninstall "$@" ;;
+  help | -h | --help) usage ;;
+  *) usage >&2; exit 2 ;;
+esac

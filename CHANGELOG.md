@@ -1,5 +1,11 @@
 # Changelog
 
+0.78.0
+
+  Add detroit CLI
+  Add test suite
+  Update docs
+
 0.77.0
 
   Archive old docs

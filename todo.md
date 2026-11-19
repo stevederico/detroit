@@ -4,9 +4,11 @@ Ideas for the rebuild. The old list is in `archive/todo-alpha.md`.
 
 ## Build
 
-- [ ] `bin/detroit` CLI: run, shift, add, status, install
-- [ ] Shift: usage-window budget or hours cap, one shift at a time
-- [ ] Nightly timer that calls `detroit shift`
+- [x] `bin/detroit` CLI: run, shift, add, status, install
+- [x] Shift: hours cap, one shift at a time
+- [ ] Shift: usage-window budget (stop at 80% of the agent's window)
+- [ ] Run the real agents end to end with `garden pr`, then `detroit install`
+- [ ] New repos: check that `gh repo create --private` and the first PR work
 
 ## Intake
 

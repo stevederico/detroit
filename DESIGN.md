@@ -27,6 +27,21 @@ RUNNER
   4 Done (PR created: file task in done/, else failed/)
 ```
 
+## CLI
+
+One script, `bin/detroit`:
+
+```
+detroit run               one task: setup, plan, code, done
+detroit shift [--hours N] loop the queue until it is empty or N hours pass (default 6)
+detroit add "text"        write a task into tasks/ (--repo, --name)
+detroit status            queue, running tasks, last results
+detroit install           nightly shift at 01:00 (systemd user timer)
+detroit uninstall         stop the nightly shift
+```
+
+State (locks, logs, plans, worktrees, results) lives in `~/.local/state/detroit`. The agent is `DETROIT_AGENT` (grok, claude or opencode). Shift stops on an hours cap only; the usage-window budget is not built yet.
+
 ## Steps
 
 **0 Shift.** A systemd timer starts it at 01:00. It loops tasks while the budget lasts. Before each task it checks the usage budget (or the hours cap for opencode), that the agent and `gh` are ready, that no other shift is running, and that the agent's Herdr session is free. It stops when the budget is gone or the queue is empty.

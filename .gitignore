@@ -2,8 +2,5 @@ logs/
 tasks/*.md
 tasks/done/
 tasks/failed/
-tasks/.locks/
 .status/
-demo/
-detroit-web
 .shift.lock/

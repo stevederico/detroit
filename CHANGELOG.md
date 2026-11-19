@@ -1,5 +1,12 @@
 # Changelog
 
+0.77.0
+
+  Archive old docs
+  Archive scheduling
+  Rewrite todo
+  Trim gitignore
+
 0.76.0
 
   Update design doc

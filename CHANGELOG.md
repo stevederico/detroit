@@ -1,5 +1,10 @@
 # Changelog
 
+0.79.0
+
+  Fix agent launch
+  Test real agents
+
 0.78.0
 
   Add detroit CLI

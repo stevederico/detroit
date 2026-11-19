@@ -1,6 +1,6 @@
 {
   "name": "detroit",
-  "version": "0.78.0",
+  "version": "0.79.0",
   "description": "Detroit: the Runner (outer loop) and the Factory (inner loop). Being rebuilt, see DESIGN.md.",
   "private": true,
   "scripts": {

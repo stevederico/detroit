@@ -164,6 +164,44 @@ wait "$holder" 2> /dev/null
 out="$("$bin" shift 2>&1)"
 has 'a lock left by a dead pid is taken over' 'queue empty' "$out"
 
+cat > "$work/bin/claude" << 'EOF'
+#!/bin/sh
+printf '%s\n' "$*" > "$STUB_ARGS"
+case "$*" in
+  *"needs a written plan"*) ;;
+  *) echo https://example.test/pr/1 > "$GH_PR_URL_FILE" ;;
+esac
+EOF
+cp "$work/bin/claude" "$work/bin/grok"
+cp "$work/bin/claude" "$work/bin/opencode"
+chmod +x "$work/bin/claude" "$work/bin/grok" "$work/bin/opencode"
+export STUB_ARGS="$work/agent-args"
+
+for agent in claude grok opencode; do
+  reset
+  "$bin" add "real $agent" --repo app --name "real-$agent" > /dev/null
+  env -u DETROIT_AGENT_CMD DETROIT_AGENT="$agent" "$bin" run > /dev/null 2>&1
+  check "$agent runs as the agent with no model set" 0 $?
+  [ -f "$work/tasks/done/real-$agent.md" ] && ok "$agent task is filed in done" || bad "$agent task is filed in done"
+done
+has 'claude runs headless and skips prompts' '--dangerously-skip-permissions' "$(
+  reset
+  "$bin" add "claude flags" --repo app --name flags > /dev/null
+  env -u DETROIT_AGENT_CMD DETROIT_AGENT=claude "$bin" run > /dev/null 2>&1
+  cat "$work/agent-args"
+)"
+has 'DETROIT_MODEL reaches the agent' '--model sonnet' "$(
+  reset
+  "$bin" add "model flag" --repo app --name model > /dev/null
+  env -u DETROIT_AGENT_CMD DETROIT_AGENT=claude DETROIT_MODEL=sonnet "$bin" run > /dev/null 2>&1
+  cat "$work/agent-args"
+)"
+reset
+"$bin" add "bad agent" --repo app --name bad > /dev/null
+env -u DETROIT_AGENT_CMD DETROIT_AGENT=nosuchagent "$bin" run > /dev/null 2>&1
+check 'an agent that is not installed stops the run before any task is touched' 1 $?
+[ -f "$work/tasks/bad.md" ] && ok 'the task stays queued when the agent is missing' || bad 'the task stays queued when the agent is missing'
+
 reset
 "$bin" add "queued" --repo app --name q > /dev/null
 out="$("$bin" status)"

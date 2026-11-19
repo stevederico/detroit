@@ -87,14 +87,8 @@ agent_argv() {
     return 0
   fi
   case "$AGENT" in
-    claude)
-      ARGV=(claude -p "$prompt" --dangerously-skip-permissions)
-      [ -n "$model" ] && ARGV+=(--model "$model")
-      ;;
-    grok)
-      ARGV=(grok --no-auto-update -p "$prompt")
-      [ -n "$model" ] && ARGV+=(--model "$model")
-      ;;
+    claude) ARGV=(claude -p "$prompt" --dangerously-skip-permissions ${model:+--model "$model"}) ;;
+    grok) ARGV=(grok --no-auto-update -p "$prompt" ${model:+--model "$model"}) ;;
     opencode) ARGV=(opencode run --auto -m "${model:-$OPENCODE_MODEL}" -- "$prompt") ;;
     *) return 1 ;;
   esac

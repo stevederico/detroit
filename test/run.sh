@@ -25,7 +25,7 @@ export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER
 export DETROIT_STATE="$work/state" DETROIT_TASKS="$work/tasks" DETROIT_PROJECTS="$work/projects"
 export DETROIT_LESSONS="$work/lessons.md" DETROIT_PAUSE=0 DETROIT_UNIT_DIR="$work/units"
 export GH_PR_URL_FILE="$work/pr-url" GH_SIGNED_IN=1 STUB_LOG="$work/stub.log" STUB_CODE_PROMPT="$work/code-prompt"
-export STUB_RUNNING="$work/running" STUB_MAX="$work/max"
+export STUB_RUNNING="$work/running" STUB_MAX="$work/max" STUB_HUNG="$work/hung" STUB_PID="$work/stub-pid" STUB_SNAPSHOT="$work/snapshot"
 export DETROIT_AGENT_CMD="$work/bin/agent-stub"
 export PATH="$work/bin:$PATH"
 
@@ -46,6 +46,18 @@ case "$1" in
     ;;
   *)
     echo code >> "$STUB_LOG"
+    cat "$DETROIT_STATE"/lines/* > "$STUB_SNAPSHOT" 2> /dev/null
+    if [ "${STUB_HANG_ALWAYS:-0}" = 1 ] || { [ "${STUB_HANG_ONCE:-0}" = 1 ] && [ ! -f "$STUB_HUNG" ]; }; then
+      touch "$STUB_HUNG"
+      echo $$ > "$STUB_PID"
+      exec sleep 60
+    fi
+    if [ "${STUB_BUSY:-0}" = 1 ]; then
+      for i in 1 2 3 4; do
+        echo "$i" > "$DETROIT_WORK/busy.txt"
+        sleep 1
+      done
+    fi
     if [ -n "${STUB_SLEEP:-}" ]; then
       mkdir -p "$STUB_RUNNING/$$"
       sleep "$STUB_SLEEP"
@@ -65,8 +77,8 @@ EOF
 chmod +x "$work/bin/gh" "$work/bin/agent-stub" "$work/bin/systemctl"
 
 reset() {
-  rm -rf "$work/running" "$work/max" "$work/tasks" "$work/state" "$work/lessons.md" "$work/pr-url" "$work/stub.log" "$work/code-prompt"
-  unset STUB_PLAN STUB_PR STUB_SLEEP
+  rm -rf "$work/hung" "$work/stub-pid" "$work/snapshot" "$work/running" "$work/max" "$work/tasks" "$work/state" "$work/lessons.md" "$work/pr-url" "$work/stub.log" "$work/code-prompt"
+  unset STUB_PLAN STUB_PR STUB_SLEEP STUB_HANG_ONCE STUB_HANG_ALWAYS STUB_BUSY
   export GH_SIGNED_IN=1
 }
 
@@ -119,6 +131,41 @@ printf -- '- earlier: the build broke on a missing flag\n' > "$work/lessons.md"
 "$bin" add "lesson task" --repo app --name lessons > /dev/null
 "$bin" run > /dev/null 2>&1
 has 'lessons go into the code prompt' 'the build broke on a missing flag' "$(cat "$work/code-prompt")"
+
+reset
+"$bin" add "snapshot" --repo app --name snap > /dev/null
+"$bin" run > /dev/null 2>&1
+has 'a running task writes a line record with its phase' 'phase=code' "$(cat "$work/snapshot")"
+has 'the line record names the task' 'task=snap' "$(cat "$work/snapshot")"
+has 'the line record names the repo' 'repo=app' "$(cat "$work/snapshot")"
+check 'the line record is removed when the task ends' '' "$(ls "$work/state/lines")"
+
+reset
+"$bin" add "hangs once" --repo app --name hang1 > /dev/null
+out="$(STUB_HANG_ONCE=1 DETROIT_STALL_SECS=2 DETROIT_WATCH_EVERY=1 "$bin" run 2>&1)"
+check 'a stalled agent is restarted and the task finishes' 0 $?
+has 'the stall is logged' 'stalled: hang1' "$out"
+has 'the restart is logged' 'restarting hang1 after a stall' "$out"
+[ -f "$work/tasks/done/hang1.md" ] && ok 'a restarted task is filed in done' || bad 'a restarted task is filed in done' "$out"
+kill -0 "$(cat "$work/stub-pid")" 2> /dev/null && bad 'the stalled agent process is killed' || ok 'the stalled agent process is killed'
+
+reset
+"$bin" add "always hangs" --repo app --name hang2 > /dev/null
+out="$(STUB_HANG_ALWAYS=1 DETROIT_RETRIES=1 DETROIT_STALL_SECS=2 DETROIT_WATCH_EVERY=1 "$bin" run 2>&1)"
+check 'a task that stalls on every attempt fails' 1 $?
+[ -f "$work/tasks/failed/hang2.md" ] && ok 'a task that always stalls moves to failed' || bad 'a task that always stalls moves to failed'
+has 'the lesson says the agent stalled' 'stalled on every attempt' "$(cat "$work/lessons.md")"
+
+reset
+"$bin" add "hangs no retry" --repo app --name hang3 > /dev/null
+STUB_HANG_ONCE=1 DETROIT_RETRIES=0 DETROIT_STALL_SECS=2 DETROIT_WATCH_EVERY=1 "$bin" run > /dev/null 2>&1
+check 'DETROIT_RETRIES=0 fails a stalled task without a restart' 1 $?
+
+reset
+"$bin" add "busy" --repo app --name busy > /dev/null
+out="$(STUB_BUSY=1 DETROIT_STALL_SECS=2 DETROIT_WATCH_EVERY=1 "$bin" run 2>&1)"
+check 'an agent that changes files is not called stalled' 0 $?
+case "$out" in *"stalled:"*) bad 'file changes in the worktree count as activity' "$out" ;; *) ok 'file changes in the worktree count as activity' ;; esac
 
 reset
 rm -rf "$work/projects/.detroit"

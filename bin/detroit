@@ -10,6 +10,7 @@ AGENT="${DETROIT_AGENT:-grok}"
 OPENCODE_MODEL="studio/mlx-community/Qwen3-Coder-Next-4bit"
 TASK_LOCK=""
 SHIFT_LOCK=""
+LINES="$STATE/lines"
 
 usage() {
   cat << 'EOF'
@@ -31,7 +32,7 @@ EOF
 
 log() { printf '%s %s\n' "$(date '+%F %T')" "$*" | tee -a "$STATE/detroit.log"; }
 
-init() { mkdir -p "$STATE/locks" "$STATE/logs" "$STATE/plans" "$TASKS/done" "$TASKS/failed"; }
+init() { mkdir -p "$STATE/locks" "$STATE/lines" "$STATE/logs" "$STATE/plans" "$TASKS/done" "$TASKS/failed"; }
 
 slug() { printf '%s' "$1" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9\n' '-' | sed 's/--*/-/g;s/^-//;s/-$//' | cut -c1-40; }
 
@@ -53,7 +54,20 @@ lock_take() {
   printf '%s\n' "$$" > "$dir/pid"
 }
 
+line_write() {
+  [ -n "${TASK_NAME:-}" ] || return 0
+  printf 'task=%s\nrepo=%s\nphase=%s\nbranch=%s\nattempt=%s\nstarted=%s\nactivity=%s\npid=%s\n' \
+    "$TASK_NAME" "$(basename "${REPO_DIR:-}")" "${LINE_PHASE:-}" "${BRANCH:-}" "${LINE_ATTEMPT:-1}" "${LINE_STARTED:-}" "${LINE_ACTIVITY:-}" "$BASHPID" > "$LINES/$TASK_NAME.tmp" &&
+    mv "$LINES/$TASK_NAME.tmp" "$LINES/$TASK_NAME"
+}
+
+phase() {
+  LINE_PHASE="$1"
+  line_write
+}
+
 release() {
+  [ -n "${TASK_NAME:-}" ] && rm -f "$LINES/$TASK_NAME" "$LINES/$TASK_NAME.tmp"
   [ -n "$TASK_LOCK" ] && rm -rf "$TASK_LOCK"
   [ -n "$SHIFT_LOCK" ] && rm -rf "$SHIFT_LOCK"
   TASK_LOCK=""
@@ -95,11 +109,50 @@ agent_argv() {
   esac
 }
 
+activity_mtime() {
+  local log newest
+  log="$(stat -c %Y "$TASK_LOG" 2> /dev/null || echo 0)"
+  newest="$(find "$WORK" \( -name node_modules -o -name target \) -prune -o -type f -printf '%T@\n' 2> /dev/null | sort -n | tail -1)"
+  newest="${newest%.*}"
+  [ "${newest:-0}" -gt "$log" ] && log="$newest"
+  printf '%s\n' "$log"
+}
+
+watch_agent() {
+  local pid="$1" tick=0 every="${DETROIT_WATCH_EVERY:-30}" stall="${DETROIT_STALL_SECS:-900}" start last now
+  start="$(date +%s)"
+  while kill -0 "$pid" 2> /dev/null; do
+    sleep 0.2
+    tick=$((tick + 1))
+    [ $((tick % (every * 5))) = 0 ] || continue
+    kill -0 "$pid" 2> /dev/null || break
+    last="$(activity_mtime)"
+    [ "$last" -lt "$start" ] && last="$start"
+    now="$(date +%s)"
+    LINE_ACTIVITY="$last"
+    line_write
+    if [ $((now - last)) -ge "$stall" ]; then
+      log "stalled: $TASK_NAME had no activity for $((now - last))s"
+      kill -TERM -- "-$pid" 2> /dev/null
+      sleep 2
+      kill -KILL -- "-$pid" 2> /dev/null
+      return 125
+    fi
+  done
+  return 0
+}
+
 run_agent() {
-  local secs="$1" prompt="$2"
+  local secs="$1" prompt="$2" pid rc w
   agent_argv "$prompt" || { log "unknown agent '$AGENT'. Set DETROIT_AGENT to grok, claude or opencode."; return 1; }
-  (cd "$WORK" && timeout -k 30 "$secs" "${ARGV[@]}" < /dev/null) 2>&1 | tee -a "$TASK_LOG"
-  return "${PIPESTATUS[0]}"
+  (cd "$WORK" && exec setsid timeout -k 30 "$secs" "${ARGV[@]}" < /dev/null >> "$TASK_LOG" 2>&1) &
+  pid=$!
+  watch_agent "$pid"
+  rc=$?
+  wait "$pid" 2> /dev/null
+  w=$?
+  [ "$rc" = 125 ] && return 125
+  return "$w"
 }
 
 setup() {
@@ -162,10 +215,11 @@ $TASK_BODY
 }
 
 code() {
-  local lessons="" plan=""
+  local lessons="" plan="" prompt note="" attempt=1 max rc
+  max=$((1 + ${DETROIT_RETRIES:-1}))
   [ -f "$LESSONS" ] && lessons="$(grep '^- ' "$LESSONS" | tail -15)"
   [ -s "$PLAN_FILE" ] && plan="$(cat "$PLAN_FILE")"
-  run_agent "${DETROIT_CODE_TIMEOUT:-3600}" "$(
+  prompt="$(
     cat << EOF
 You are running under Detroit. Complete this task in the repo at $WORK (branch $BRANCH, base $BASE).
 
@@ -183,7 +237,19 @@ $lessons
 }
 Garden checks every command, commit and push. Fix what it reports. When the work is committed, open the pull request with garden pr (see garden help).
 EOF
-  )" > /dev/null
+  )"
+  while [ "$attempt" -le "$max" ]; do
+    LINE_ATTEMPT="$attempt"
+    LINE_ACTIVITY="$(date +%s)"
+    line_write
+    run_agent "${DETROIT_CODE_TIMEOUT:-3600}" "$prompt$note"
+    rc=$?
+    [ "$rc" = 125 ] || return "$rc"
+    log "restarting $TASK_NAME after a stall (attempt $attempt of $max)"
+    note=$'\n\nYour previous attempt stalled and was stopped. Run git status and git log in the repo, then continue from where it stopped.'
+    attempt=$((attempt + 1))
+  done
+  return 125
 }
 
 fail() {
@@ -214,12 +280,30 @@ finish() {
 }
 
 run_one() {
+  local rc
   pick_task || return 2
   TASK_LOG="$STATE/logs/$(date +%Y%m%d-%H%M%S)-$TASK_NAME.log"
+  LINE_STARTED="$(date +%s)"
+  LINE_ACTIVITY="$LINE_STARTED"
+  LINE_ATTEMPT=1
+  REPO_DIR=""
+  BRANCH=""
   log "task: $TASK_NAME"
+  phase setup
   setup || { fail "could not set up the repo and branch"; return 1; }
+  phase plan
   plan || { fail "the plan was rejected or the planning step failed"; return 1; }
-  code || { fail "the agent run failed or timed out"; return 1; }
+  phase code
+  code
+  rc=$?
+  if [ "$rc" = 125 ]; then
+    fail "the agent stalled on every attempt"
+    return 1
+  elif [ "$rc" != 0 ]; then
+    fail "the agent run failed or timed out"
+    return 1
+  fi
+  phase finish
   finish
 }
 

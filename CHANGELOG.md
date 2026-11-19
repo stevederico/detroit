@@ -1,5 +1,10 @@
 # Changelog
 
+0.82.0
+
+  Restart stalled agents
+  Write line records
+
 0.81.0
 
   Add shift parallel

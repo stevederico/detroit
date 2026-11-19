@@ -1,5 +1,10 @@
 # Changelog
 
+0.80.0
+
+  Move worktrees
+  Match GARDEN_REPOS
+
 0.79.0
 
   Fix agent launch

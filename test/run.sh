@@ -81,6 +81,7 @@ has 'add writes the repo into the frontmatter' 'repo: app' "$(cat "$f1")"
 has 'add writes the text as the body' 'fix the login bug' "$(cat "$f1")"
 
 reset
+rm -rf "$work/projects/.detroit"
 "$bin" add "first task" --repo app --name 01-first > /dev/null
 "$bin" add "second task" --repo app --name 02-second > /dev/null
 out="$("$bin" run 2>&1)"
@@ -90,7 +91,8 @@ check 'run succeeds when a pull request exists' 0 $?
 has 'the code prompt carries the task' 'first task' "$(cat "$work/code-prompt")"
 lacks 'the task frontmatter stays out of the prompt' 'repo: app' "$(cat "$work/code-prompt")"
 has 'the code prompt tells the agent to use garden pr' 'garden pr' "$(cat "$work/code-prompt")"
-check 'the worktree is removed after success' '' "$(ls "$work/state/work")"
+has 'the worktree sits under the projects folder so GARDEN_REPOS globs match it' "$work/projects/.detroit/app-01-first" "$(cat "$work/code-prompt")"
+check 'the worktree is removed after success' '' "$(ls "$work/projects/.detroit")"
 has 'results log the pull request' 'https://example.test/pr/1' "$(cat "$work/state/results.log")"
 check 'a lock is released after the run' '' "$(ls "$work/state/locks")"
 
@@ -112,12 +114,13 @@ printf -- '- earlier: the build broke on a missing flag\n' > "$work/lessons.md"
 has 'lessons go into the code prompt' 'the build broke on a missing flag' "$(cat "$work/code-prompt")"
 
 reset
+rm -rf "$work/projects/.detroit"
 "$bin" add "no pr task" --repo app --name nopr > /dev/null
 STUB_PR=0 "$bin" run > /dev/null 2>&1
 check 'run exits 1 when no pull request exists' 1 $?
 [ -f "$work/tasks/failed/nopr.md" ] && ok 'a task with no pull request moves to failed' || bad 'a task with no pull request moves to failed'
 has 'a failure is written to lessons.md' 'nopr' "$(cat "$work/lessons.md")"
-[ -n "$(ls "$work/state/work")" ] && ok 'the worktree is kept after a failure' || bad 'the worktree is kept after a failure'
+[ -n "$(ls "$work/projects/.detroit")" ] && ok 'the worktree is kept after a failure' || bad 'the worktree is kept after a failure'
 
 reset
 "$bin" add "missing repo" --repo nosuchrepo --name missing > /dev/null

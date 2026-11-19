@@ -30,7 +30,7 @@ EOF
 
 log() { printf '%s %s\n' "$(date '+%F %T')" "$*" | tee -a "$STATE/detroit.log"; }
 
-init() { mkdir -p "$STATE/locks" "$STATE/logs" "$STATE/plans" "$STATE/work" "$TASKS/done" "$TASKS/failed"; }
+init() { mkdir -p "$STATE/locks" "$STATE/logs" "$STATE/plans" "$TASKS/done" "$TASKS/failed"; }
 
 slug() { printf '%s' "$1" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9\n' '-' | sed 's/--*/-/g;s/^-//;s/-$//' | cut -c1-40; }
 
@@ -131,9 +131,10 @@ setup() {
   start="$BASE"
   git -C "$REPO_DIR" rev-parse -q --verify "origin/$BASE" > /dev/null 2>&1 && start="origin/$BASE"
   BRANCH="detroit/$(slug "$TASK_NAME")-$(date +%m%d%H%M)"
-  WORK="$STATE/work/$(basename "$REPO_DIR")-$(slug "$TASK_NAME")"
+  WORK="$PROJECTS/.detroit/$(basename "$REPO_DIR")-$(slug "$TASK_NAME")"
   [ -e "$WORK" ] && git -C "$REPO_DIR" worktree remove --force "$WORK" 2> /dev/null
   rm -rf "$WORK"
+  mkdir -p "$(dirname "$WORK")"
   git -C "$REPO_DIR" worktree add -q -b "$BRANCH" "$WORK" "$start" || return 1
   export DETROIT_WORK="$WORK" DETROIT_BRANCH="$BRANCH"
 }
